@@ -264,20 +264,27 @@
     const track = currentTrack();
     if (!track || track.state !== 'ready') return;
     const audio = track.audio;
-    const target = video.currentTime - track.offset;
+    if (!audio || !Number.isFinite(audio.duration) || audio.duration <= 0) return;
+    if (!Number.isFinite(video.currentTime)) return;
+    const offset = Number.isFinite(track.offset) ? track.offset : 0;
+    const target = video.currentTime - offset;
+    if (!Number.isFinite(target)) return;
     audio.playbackRate = video.playbackRate;
     if (target < 0 || target >= audio.duration) {
       audio.pause();
       const boundary = target < 0 ? 0 : audio.duration;
-      if (Math.abs(audio.currentTime - boundary) > 0.1) audio.currentTime = boundary;
+      if (Number.isFinite(boundary) && Math.abs(audio.currentTime - boundary) > 0.1) {
+        audio.currentTime = boundary;
+      }
       if (audioWaiting) resumeAfterAudioBuffer();
       return;
     }
-    // Assigning even the same currentTime initiates an asynchronous media seek.
-    // Do not repeatedly restart decoding at bootstrap or on every playing event.
     const tolerance = force ? 0.025 : 0.18;
     if (audio.ended || Math.abs(audio.currentTime - target) > tolerance) {
-      audio.currentTime = Math.max(0, Math.min(target, audio.duration));
+      const pos = Math.max(0, Math.min(target, audio.duration));
+      if (Number.isFinite(pos)) {
+        audio.currentTime = pos;
+      }
     }
     if (audioWaiting) {
       audio.pause();
@@ -309,7 +316,7 @@
     }
     epoch += 1;
     const ticket = epoch;
-    if (video.ended || video.currentTime >= video.duration) video.currentTime = 0;
+    if (video.ended || (Number.isFinite(video.duration) && video.currentTime >= video.duration)) video.currentTime = 0;
     wanted = true;
     waiting = false;
     audioWaiting = false;
@@ -485,7 +492,7 @@
   function seekTo(time) {
     if (!videoReady) return;
     for (const track of tracks) track.audio?.pause();
-    video.currentTime = Math.max(0, Math.min(time, video.duration));
+    if (Number.isFinite(time)) video.currentTime = Math.max(0, Math.min(time, Number.isFinite(video.duration) ? video.duration : time));
     syncAudio(true);
     updateState();
   }
@@ -548,7 +555,7 @@
     ui.videoLabel.textContent = '本地视频 · 不上传';
     ui.seek.max = video.duration;
     setControls(true);
-    video.currentTime = Math.min(resumePosition, video.duration);
+    video.currentTime = Math.min(Number.isFinite(resumePosition) ? resumePosition : 0, video.duration);
     resumePosition = 0;
     routeSound();
     updateState();
@@ -699,7 +706,7 @@
           name: data.label,
           offset: 0,
           metadata: { name: data.label, duration: (data.duration_ms || 1004128) / 1000 },
-          state: 'ready',
+          state: 'loading',
           audio: new Audio(),
           url: data.audio_url
         };
@@ -707,13 +714,16 @@
       } else {
         track.name = data.label;
         track.url = data.audio_url;
+        track.state = 'loading';
       }
       setMediaOrigin(track.audio, { url: data.audio_url });
       track.audio.src = data.audio_url;
       track.audio.preload = 'auto';
       track.audio.addEventListener('loadedmetadata', () => {
         if (track.metadata) track.metadata.duration = track.audio.duration;
+        track.state = 'ready';
         renderTracks();
+        if (selected === track.id) syncAudio(true);
       });
 
       renderTracks();
