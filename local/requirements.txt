@@ -1,0 +1,4 @@
+# TaleTone local playback/editor: Python 3.11+ standard library only.
+# No pip packages are required unless local neural synthesis is enabled.
+# Install ffmpeg and ffprobe separately and put both on PATH.
+# Optional Apple Silicon synthesis: requirements-mlx.txt.

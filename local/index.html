@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f2">
+  <title>TaleTone 声伴 · 本机配音编辑器</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/vendor/hls.min.js" defer></script>
+  <script src="/app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#playback">跳到播放器</a>
+<main>
+  <header class="page-header">
+    <a class="brand" href="/" aria-label="声伴首页"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 13v6m6-12v18m7-22v26m7-18v10"/></svg><span>声伴<small>让故事，用熟悉的声音讲。</small></span></a>
+    <div class="header-right">
+      <button id="startGuide" class="guide-trigger-btn" type="button" aria-label="打开新手引导"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="7"/><path d="M8 7v4m0-6h.01"/></svg>新手引导</button>
+      <span class="local-badge"><span></span>本机私享</span>
+    </div>
+  </header>
+  <section class="project-bar" aria-label="当前项目">
+    <div class="project-name"><label for="title">我的配音项目</label><input id="title" type="text" placeholder="正在打开项目…" disabled><p id="saveState" class="save-state" aria-live="polite">正在读取本机保存的项目</p></div>
+    <div class="project-tools"><button id="save" disabled>保存项目</button><details class="project-menu"><summary aria-label="打开项目菜单">项目菜单<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4"/></svg></summary><div class="menu-content"><h2>项目与备份</h2><button id="reopen" disabled>重新打开已保存项目</button><button id="export" disabled>导出项目 JSON</button><label class="field" for="import">导入项目 JSON<input id="import" type="file" accept="application/json,.json" disabled></label><p class="hint">JSON 保留译文、声音设置与原视频引用，不含视频或临时音频。生成型声音按需准备；已有媒体需在本应用注册。导入将替换当前及已保存项目，不是导出视频。</p></div></details></div>
+  </section>
+  <div class="notice-row"><div id="notice" class="notice pending" role="status" aria-live="polite">正在打开你的项目…</div><button id="retryLoad" class="small-button" hidden>重新加载</button></div>
+  <div class="listening-layout">
+    <section id="playback" class="player-card" aria-label="视频预览" tabindex="-1">
+      <div class="video-stage"><video id="video" playsinline muted preload="none" aria-label="视频画面，播放时仅使用所选声音"></video><div id="playerOverlay" class="player-overlay"><span class="loader" aria-hidden="true"></span><p id="playerOverlayText">正在打开静音画面预览</p></div><span id="videoLabel" class="video-label">静音画面预览</span></div>
+      <div class="player-controls"><input id="seek" class="seek" type="range" min="0" max="1" step="0.01" value="0" aria-label="视频进度（秒）" disabled>
+        <div class="transport"><button id="play" class="primary play-button" disabled>播放预览</button><button id="back" class="back-button" disabled aria-label="后退十秒">−10 秒</button><output id="clock">00:00 / 00:00</output><label class="rate-label"><span class="sr-only">播放倍速</span><select id="rate" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label></div>
+        <div class="volume-row"><label for="volume">音量<input id="volume" type="range" min="0" max="1" step="0.01" value="1" aria-label="播放音量"></label><span id="mediaState" class="muted" aria-live="polite">等待视频</span></div>
+      </div>
+    </section>
+    <aside class="voice-panel" aria-labelledby="tracksHeading">
+      <div class="voice-intro"><p class="eyebrow">换个声音，继续听</p><h1 id="tracksHeading">你想听哪一种？</h1><p class="muted">先选声音，再点播放。选择不会调用 AI，切换时保留观看进度。</p></div>
+      <div id="voiceChoices" class="voice-choices" role="group" aria-label="选择播放声音" aria-busy="true"><p class="empty-voices">正在读取可用声音…</p></div>
+      <section class="cache-panel" aria-labelledby="cacheHeading">
+        <div class="cache-heading"><h2 id="cacheHeading">临时试听缓存</h2><span id="cacheSummary" class="hint">正在读取用量…</span></div>
+        <p id="generationStatus" class="generation-status" role="status" aria-live="polite">只在你点击播放时准备所选语言。</p>
+        <progress id="generationProgress" class="generation-progress" aria-label="当前配音真实完成段数" max="1" hidden></progress>
+        <p id="preparationHint" class="hint">只在播放时准备当前声音；声音已就绪时直接复用，不重新生成。</p>
+        <p id="cachePolicy" class="hint">临时保存约 24 小时，下次使用时清理过期内容；空间有限，不会永久保留配音。</p>
+        <button id="clearCache" class="text-button" type="button" disabled>清理临时缓存</button>
+      </section>
+      <details class="upload-panel"><summary><span class="plus-icon" aria-hidden="true">+</span>添加已有配音</summary><div class="details-content"><p>把自己准备好的音频加进来，作为一个可切换的新声音；不会覆盖原有配音。</p><label class="field" for="upload">选择本地音频<input id="upload" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus" disabled></label><p class="hint">支持 MP3、WAV、M4A 等，最大 512 MiB。只添加真实音频，不会自动翻译、转写或生成配音。添加后请保存项目。</p></div></details>
+      <div class="voice-footer"><button id="openEditor" class="text-button" disabled>编辑译文 <span aria-hidden="true">↗</span></button><span class="hint">只改文字，不改变声音</span></div>
+      <details class="advanced-track"><summary>声音设置 <span>名称、时间微调</span></summary><div class="details-content"><label class="field">当前声音（列表选择）<select id="track" disabled></select></label><label class="field">声音名称<input id="trackName" type="text" disabled></label><label class="field">时间偏移 · 毫秒<input id="offset" type="number" min="-600000" max="600000" step="1" value="0" required disabled></label><p class="hint">仅上传的已有配音可微调：正数延后开始，负数跳过开头。生成型声音按已发布文本的时间准备，此处不可修改。</p><p id="trackInfo" class="hint"></p><div class="remove-zone"><button id="remove" class="danger" disabled>移除此配音</button><p class="hint">仅上传的已有配音可在此移除，不删除原始媒体。原声与项目内生成型声音保留。</p></div></div></details>
+    </aside>
+  </div>
+  <details id="editorPanel" class="editor-panel">
+    <summary><span><span class="eyebrow">文字工作区</span><span class="summary-title">片段译文草稿</span></span><span class="summary-meta"><span id="editorScope">正在读取译文</span><span class="disclosure-icon" aria-hidden="true">+</span></span></summary>
+    <section class="editor-content" aria-labelledby="editorHeading"><div class="section-heading"><div><h2 id="editorHeading" tabindex="-1">打磨你的表达</h2><p id="editorDescription" class="muted">按当前声音显示已有译文。保存草稿不改变声音；生成型声音可明确应用修改后重新试听。</p></div><div class="editor-actions"><button id="saveDraft" disabled>保存草稿与项目</button><button id="publishDraft" class="primary" hidden disabled>应用修改并生成试听</button></div></div><p id="editorStatus" class="editor-status">选择目标语言查看译文。</p><div id="segments"></div></section>
+  </details>
+  <details class="diagnostics"><summary>高级信息与播放诊断</summary><div class="diagnostics-content"><section aria-labelledby="stateHeading"><h2 id="stateHeading">播放详情</h2><dl class="state"><dt>播放声音</dt><dd id="sTrack">—</dd><dt>播放状态</dt><dd id="sPlay">—</dd><dt>已发布修订</dt><dd id="sRevision">—</dd><dt>文字草稿</dt><dd id="sDraft">—</dd><dt>同步方式</dt><dd id="sDrift">—</dd><dt>声音来源</dt><dd id="sOriginal">—</dd><dt>分片磁盘量</dt><dd id="sStorage">尚未准备分片</dd></dl></section><section><h2>媒体来源</h2><details><summary>当前声音的来源</summary><p id="audioIdentity" class="identity">尚未加载</p></details><details><summary>源视频的素材身份</summary><p id="sourceIdentity" class="identity">尚未加载</p></details><p class="hint">所有语言共享一个视频时钟。生成型声音仅在明确点击后按需准备并暂存；原视频、上传的已有配音与已导出成片不会被修改。这里不导出视频。</p></section></div></details>
+  <footer class="page-footer"><span>声伴 · 一份画面，多种声音</span><span>媒体留在本机，原始文件保持不变</span></footer>
+  <div id="guideOverlay" class="guide-overlay" hidden>
+    <div id="guideSpotlight" class="guide-spotlight" aria-hidden="true"></div>
+    <div id="guideCard" class="guide-card" role="dialog" aria-modal="true" aria-labelledby="guideTitle">
+      <div class="guide-card-header">
+        <span id="guideStepBadge" class="guide-step-badge">第 1 / 4 步</span>
+        <button id="guideClose" class="guide-close-btn" type="button" aria-label="关闭引导">✕</button>
+      </div>
+      <div class="guide-card-body">
+        <h3 id="guideTitle">1. 选择你想听的声音</h3>
+        <p id="guideText">先选一种语言。打开页面或点声音卡片不会调用 AI；“尚未生成”表示只有译文，“缓存就绪”可直接试听。切换声音保留观看进度。</p>
+      </div>
+      <div class="guide-card-footer">
+        <button id="guideSkip" class="guide-skip-btn" type="button">跳过</button>
+        <div class="guide-nav-buttons">
+          <button id="guidePrev" class="guide-prev-btn" type="button">上一步</button>
+          <button id="guideNext" class="guide-next-btn primary" type="button">下一步</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <noscript><p class="notice error">请启用 JavaScript，以打开项目与播放视频。</p></noscript>
+</main>
+</body>
+</html>

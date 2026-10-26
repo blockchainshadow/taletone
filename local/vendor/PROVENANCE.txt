@@ -1,0 +1,24 @@
+TaleTone vendored browser dependency
+
+File: hls.min.js
+Package/version: hls.js 1.7.3 (version embedded in the distribution)
+Upstream: https://github.com/video-dev/hls.js/tree/v1.7.3
+Distribution: https://cdn.jsdelivr.net/npm/hls.js@1.7.3/dist/hls.min.js
+Upstream package: https://www.npmjs.com/package/hls.js/v/1.7.3
+SHA-256 of the bundled bytes:
+a12e7ee1cd64a69dcdb314157e45dafcba705bfb0b1440b7935cb265d374423e
+
+Copied unchanged from the existing local application vendor bundle. The version
+and copyright headers are preserved. The original download chain has not been
+independently attested; the URLs above identify the upstream release, not a
+claim that this release fetched or compared remote bytes. No source map is
+included or served. Runtime playback does not use a CDN.
+
+hls.LICENSE is the upstream hls.js copyright/license notice.
+Apache-2.0.txt supplies the complete Apache License, Version 2.0.
+The distribution's inline regenerator-runtime notice also references Babel's
+MIT-licensed helpers; Babel-helpers.LICENSE preserves those terms.
+
+No model weights, FFmpeg binary, user recording, personal project, or generated
+media is distributed here. Optional Python/model dependencies retain their own
+licenses; review their upstream terms before download, redistribution or use.

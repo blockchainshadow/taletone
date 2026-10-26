@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f7f7f2">
+  <meta name="description" content="声伴 TaleTone：让故事，用熟悉的声音讲。在浏览器里打开本地视频、切换多语言配音，媒体不上传。AI 配音在本地应用中完成。">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; media-src 'self' blob:; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>声伴 TaleTone · 让故事，用熟悉的声音讲。</title>
+  <link rel="stylesheet" href="./style.css">
+  <script src="./app.js" defer></script>
+</head>
+<body>
+<a class="skip-link" href="#player">跳到播放器</a>
+<main>
+  <header class="page-header">
+    <a class="brand" href="./" aria-label="声伴 TaleTone 首页"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M6 13v6m6-12v18m7-22v26m7-18v10"/></svg><span>声伴 <small>TaleTone</small></span></a>
+    <nav aria-label="主导航"><button id="openGuide" class="quiet">新手引导</button><a href="https://github.com/blockchainshadow/taletone" target="_blank" rel="noopener noreferrer">GitHub ↗</a><span class="local-badge">媒体不上传</span></nav>
+  </header>
+  <section class="intro" aria-labelledby="heading">
+    <p class="eyebrow">一个故事 · 多种声音</p><h1 id="heading">让故事，用熟悉的声音讲。</h1>
+    <p class="muted">打开自己的视频，放入准备好的配音。切换语言，让熟悉的声音陪你看。</p>
+    <p class="mode-note">这里是<strong>浏览器本地播放器</strong>，无需账号；AI 翻译、声音生成请使用 <a href="https://github.com/blockchainshadow/taletone#readme" target="_blank" rel="noopener noreferrer">TaleTone 本地应用 ↗</a>。网页不会调用 AI。</p>
+  </section>
+  <details id="guide" class="guide" open>
+    <summary>第一次使用？三步开始 <span>可随时展开</span></summary>
+    <ol><li><strong>打开视频</strong><p>选择本机视频，只在此浏览器读取。推荐 MP4（H.264 / AAC）或浏览器支持的 WebM。</p></li><li><strong>加入熟悉的声音</strong><p>导入本地应用生成或自己录制的音频，为它命名。支持多条语言配音，必要时微调时间偏移。</p></li><li><strong>切换、试听、保存</strong><p>点声音卡片后播放。外部配音期间原声始终静音；导出 JSON 保存设置，下次重新关联媒体文件。</p></li></ol>
+  </details>
+  <section class="project-bar" aria-label="项目文件">
+    <label class="project-title" for="projectTitle">我的配音项目<input id="projectTitle" value="未命名的故事" maxlength="160"></label>
+    <div class="project-actions"><button id="exportProject">导出项目 JSON</button><label class="file-button" for="importProject">导入项目 JSON<input id="importProject" type="file" accept=".json,application/json"></label></div>
+  </section>
+  <p id="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">准备就绪。先选择一个本地视频，文件不会离开你的设备。</p>
+  <div class="listening-layout">
+    <section id="player" class="player-card" aria-label="视频播放器" tabindex="-1">
+      <div class="video-stage"><video id="video" playsinline preload="metadata" disablepictureinpicture disableremoteplayback aria-label="本地视频画面；请使用下方播放控件"></video><div id="emptyVideo" class="empty-video"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="10" width="38" height="28" rx="5"/><path d="m21 18 10 6-10 6z"/></svg><strong>从你的故事开始</strong><span>视频留在本机，这里只负责播放</span><label class="file-button primary" for="videoFile">选择本地视频</label></div><span id="videoLabel" class="video-label" hidden>本地视频</span></div>
+      <div class="player-controls">
+        <input id="seek" class="seek" type="range" min="0" max="1" value="0" step="0.01" aria-label="视频进度，单位秒" disabled>
+        <div class="transport"><button id="play" class="primary" disabled>播放</button><button id="back" disabled aria-label="后退十秒">−10 秒</button><output id="clock" aria-label="当前时间与总时长">00:00 / 00:00</output><label class="rate-label"><span class="sr-only">播放速度</span><select id="rate" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label></div>
+        <div class="volume-row"><label for="volume">音量 <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8"></label><span id="playState">等待视频</span></div>
+      </div>
+      <div class="source-row"><label class="file-button" for="videoFile">打开 / 重新关联视频<input id="videoFile" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,.mkv"></label><span id="videoInfo" class="hint">未选择视频</span></div>
+    </section>
+    <aside class="voice-panel" aria-labelledby="voicesHeading">
+      <p class="eyebrow">换个声音，继续听</p><h2 id="voicesHeading">你想听哪一种？</h2><p class="muted small">共享视频进度，切换声音不从头开始。</p>
+      <div id="tracks" class="voice-choices" role="group" aria-label="选择播放声音"></div>
+      <form id="addTrack" class="upload-panel">
+        <h3>添加已有配音</h3><label class="field" for="audioName">声音 / 语言名称<input id="audioName" maxlength="100" placeholder="例如：中文 · 温柔女声"></label><label class="field" for="audioFile">本地音频（可多选）<input id="audioFile" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus" multiple required></label><button type="submit">添加配音</button><p class="hint">支持 MP3、WAV、M4A 等浏览器可解码的格式。多选时按文件名命名。不会翻译、克隆声音或生成音频。</p>
+      </form>
+      <section id="trackSettings" class="track-settings" aria-labelledby="settingsHeading" hidden>
+        <h3 id="settingsHeading">当前配音设置</h3><label class="field" for="trackName">声音名称<input id="trackName" maxlength="100"></label><label class="field" for="offset">时间偏移（秒）<input id="offset" type="number" min="-86400" max="86400" step="0.01" value="0"></label><p class="hint">正数：延后配音；负数：跳过配音开头。配音结束后画面继续，保持静音，绝不切回原声。</p><label class="field" for="remapAudio">重新关联当前配音<input id="remapAudio" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus"></label><p id="trackInfo" class="hint"></p><button id="removeTrack" class="danger">移除此配音</button>
+      </section>
+    </aside>
+  </div>
+  <details class="project-help"><summary>项目 JSON 保存了什么？</summary><p>保存项目名称、媒体文件名 / 大小 / 修改时间、声音名称、时间偏移、所选声音、观看进度和倍速；<strong>不包含视频或音频文件，也不导出配好音的视频</strong>。导入后必须手动重新选择本机视频与每条音频。浏览器不能根据文件名恢复文件内容。重新关联会使用你实际选择的文件，请自行确认是正确素材。</p><p>此页面不自动保存媒体或项目。关闭或刷新前，请导出 JSON；原始媒体文件不会被修改。导出的 JSON 含文件名，请在分享前检查。</p></details>
+  <section class="privacy" aria-labelledby="privacyHeading"><div><p class="eyebrow">你的声音，你来掌握</p><h2 id="privacyHeading">媒体留在设备，AI 留在本地。</h2></div><p>网页只读取你明确选择的文件，通过浏览器临时地址播放；没有媒体上传、远程 AI 请求或遥测。网站托管方仍可能记录普通网页访问日志。AI 配音请在本地应用完成，再将音频导入这里。请仅使用你拥有使用权的素材，并在克隆他人声音前获得明确授权。</p></section>
+  <footer><span>声伴 TaleTone · 让故事，用熟悉的声音讲。</span><a href="https://github.com/blockchainshadow/taletone" target="_blank" rel="noopener noreferrer">开源项目 ↗</a></footer>
+  <noscript><p class="notice error">请启用 JavaScript，才能读取本地文件并同步播放。此页面不会上传文件。</p></noscript>
+</main>
+</body>
+</html>

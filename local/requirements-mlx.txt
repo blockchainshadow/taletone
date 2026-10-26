@@ -1,0 +1,9 @@
+# Optional local neural synthesis only: macOS on Apple Silicon, Python 3.11+.
+# Install in a separate virtual environment, not on the public web host.
+# voice_profiles.py fingerprints these runtime versions in every cache key.
+mlx-audio==0.5.7
+mlx==0.32.3
+numpy>=1.26
+huggingface-hub>=0.30
+# Model weights are NOT included or downloaded by pip. The worker downloads
+# the configured immutable model revision on demand; see the root README.
