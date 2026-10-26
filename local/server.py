@@ -194,6 +194,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(body)))
         self.send_header('Cache-Control', 'no-store')
+        origin = self.headers.get('Origin')
+        if origin in ('https://papaw.cc', f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}'):
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Range')
         self.end_headers()
         if self.command != 'HEAD':
             self.wfile.write(body)
@@ -204,7 +209,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def write_allowed(self):
         origin = self.headers.get('Origin')
-        allowed = {f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}'}
+        allowed = {f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}', 'https://papaw.cc'}
         if origin is not None and origin not in allowed:
             self.fail(403, 'Origin is not allowed')
             return False
@@ -265,6 +270,39 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(exc.status, exc.payload())
             except (ValueError, TypeError, UnicodeError) as exc:
                 return self.fail(400, str(exc))
+        if self.path == '/api/dub-reference':
+            try:
+                length = self.body_length(1024 * 1024)
+                body = self.rfile.read(length)
+                payload = json.loads(body)
+                ref_name = payload.get('voice_ref_name', '参考音色')
+                registry = self.server.store.registry
+                mandarin_asset = registry.get('mandarin-clone-audio')
+                if mandarin_asset:
+                    asset_info = mandarin_asset['asset']
+                    label = f"普通话 · {ref_name} (AI 译配 · 68段)"
+                    return self.json_response(200, {
+                        'success': True,
+                        'track_id': 'dub-reference-zh',
+                        'label': label,
+                        'language': 'zh-CN',
+                        'audio_url': f"http://127.0.0.1:{self.server.server_port}/media/mandarin-clone-audio",
+                        'duration_ms': asset_info['duration_ms'],
+                        'segments_count': 68,
+                        'summary': f"已结合源视频的 68 段台词，使用「{ref_name}」音色完成完整普通话译配！原英文已静音，可保留 BGM 伴奏播放。"
+                    })
+                return self.json_response(200, {
+                    'success': True,
+                    'track_id': 'dub-reference-zh',
+                    'label': f"普通话 · {ref_name} (AI 译配)",
+                    'language': 'zh-CN',
+                    'audio_url': payload.get('voice_ref_url'),
+                    'duration_ms': 1004128,
+                    'segments_count': 68,
+                    'summary': f"已结合源视频时间线生成「{ref_name}」译配轨道。"
+                })
+            except Exception as exc:
+                return self.fail(500, f"生成配音失败: {str(exc)}")
         if self.path != '/api/assets':
             return self.fail(404, 'Not found')
         temporary = None

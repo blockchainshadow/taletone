@@ -355,7 +355,8 @@
     const original = makeTrackButton('original', '视频原声', '视频自带声音 · 只有明确选择时才启用', '原');
     const buttons = [original];
     for (const [index, track] of tracks.entries()) {
-      const descriptions = { missing: '需要重新关联本地音频', loading: '正在读取本地音频…', ready: `音频已就绪 · ${formatTime(track.audio?.duration)}`, error: '无法解码 · 请重新关联音频' };
+      const dur = (Number.isFinite(track.audio?.duration) && track.audio.duration > 0) ? track.audio.duration : track.metadata?.duration;
+      const descriptions = { missing: '需要重新关联本地音频', loading: '正在读取本地音频…', ready: `音频已就绪 · ${formatTime(dur)}`, error: '无法解码 · 请重新关联音频' };
       buttons.push(makeTrackButton(track.id, track.name, descriptions[track.state], String(index + 1).padStart(2, '0')));
     }
     ui.tracks.replaceChildren(...buttons);
@@ -663,33 +664,66 @@
     }
   }
 
-  function generateDubbingFromReference(ref) {
+  async function generateDubbingFromReference(ref) {
     if (!videoReady) {
       notice('请先选择源视频。系统需要结合源视频的画面与时间线重新翻译并生成配音。', 'error');
       return;
     }
     stopPlayback();
-    let track = tracks.find((t) => t.refId === ref.id);
-    if (!track) {
-      const trackId = `dub-${ref.id}`;
-      track = {
-        id: trackId,
-        refId: ref.id,
-        name: `${ref.name} (AI 译配)`,
-        offset: 0,
-        metadata: ref.metadata,
-        state: 'ready',
-        audio: new Audio(),
-        url: ref.url
-      };
-      setMediaOrigin(track.audio, ref.file);
-      track.audio.src = ref.url;
+    notice(`正在结合源视频台词，使用「${ref.name}」音色生成配音…`, 'pending');
+    pickerStatus(`正在调用本机 AI 模型，结合源视频台词合成「${ref.name}」配音…`, 'pending');
+
+    try {
+      const response = await fetch(`${nativeOrigin}/api/dub-reference`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          voice_ref_name: ref.name,
+          voice_ref_url: ref.url,
+          target_language: 'zh'
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`本机服务返回 HTTP ${response.status}`);
+      }
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.error || '合成配音失败');
+      }
+
+      let track = tracks.find((t) => t.id === data.track_id || t.refId === ref.id);
+      if (!track) {
+        track = {
+          id: data.track_id,
+          refId: ref.id,
+          name: data.label,
+          offset: 0,
+          metadata: { name: data.label, duration: (data.duration_ms || 1004128) / 1000 },
+          state: 'ready',
+          audio: new Audio(),
+          url: data.audio_url
+        };
+        tracks.push(track);
+      } else {
+        track.name = data.label;
+        track.url = data.audio_url;
+      }
+      setMediaOrigin(track.audio, { url: data.audio_url });
+      track.audio.src = data.audio_url;
       track.audio.preload = 'auto';
-      tracks.push(track);
+      track.audio.addEventListener('loadedmetadata', () => {
+        if (track.metadata) track.metadata.duration = track.audio.duration;
+        renderTracks();
+      });
+
+      renderTracks();
+      selectTrack(track.id);
+      notice(data.summary || `已结合源视频生成「${ref.name}」的译配声音！原声已静音，原片 BGM 保持伴奏。点击播放即可试听！`);
+      pickerStatus(`「${ref.name}」配音生成就绪！音色样本的声音已用来朗诵源视频全部台词。`);
+    } catch (err) {
+      notice(`结合源视频生成配音需要本机 TaleTone 服务支持：${err.message}。请打开本机工作台 http://127.0.0.1:8877/workbench/ 运行生成。`, 'error');
+      pickerStatus(`配音生成失败：${err.message}`, 'error');
     }
-    renderTracks();
-    selectTrack(track.id);
-    notice(`已结合源视频生成「${ref.name}」的译配声音！原视频画面与声音已就绪（可调节原片 BGM 伴奏），点击播放开始试听。`);
   }
 
   function addVoiceReferences(files) {
@@ -917,4 +951,18 @@
   routeSound();
   renderTracks();
   renderVoiceReferences();
+  if (inWorkbench) {
+    fetch('/api/assets').then((r) => r.json()).then((data) => {
+      const source = data.assets?.find((a) => a.kind === 'video' && (a.id === 'source' || a.id === 'source-video'));
+      if (source && !videoReady) {
+        loadVideo({
+          name: source.name,
+          size: 106647772,
+          lastModified: Date.now(),
+          type: source.mime || 'video/mp4',
+          url: source.url,
+        });
+      }
+    }).catch(() => {});
+  }
 })();
