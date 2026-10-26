@@ -79,6 +79,20 @@ class NativePicker:
         self._select = select if select is not None else choose_files
         self._tickets = {}
         self._tickets_lock = threading.Lock()
+    def resolve_ticket_url(self, url):
+        if not isinstance(url, str):
+            return None
+        parsed = urlsplit(url)
+        if not parsed.path.startswith(FILES_PATH):
+            return None
+        token = parsed.path[len(FILES_PATH):]
+        with self._tickets_lock:
+            ticket = self._tickets.get(token) if re.fullmatch(r'[A-Za-z0-9_-]{43}', token) else None
+        if not ticket:
+            return None
+        path, _, _, _ = ticket
+        return path if path.is_file() else None
+
 
     def handle(self, handler):
         target = urlsplit(handler.path)

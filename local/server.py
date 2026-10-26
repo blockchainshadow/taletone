@@ -17,6 +17,7 @@ from hls_packager import Packager, inspect_stream
 from demand_cache import CacheController, CacheError
 from voice_profiles import profile
 from native_picker import NativePicker
+from dubbing_engine import DubbingEngine
 
 ROOT = Path(__file__).resolve().parent
 WEB_ROOT = Path(os.environ.get('TALETONE_WEB_ROOT', ROOT.parent / 'web')).resolve()
@@ -276,33 +277,39 @@ class Handler(BaseHTTPRequestHandler):
                 body = self.rfile.read(length)
                 payload = json.loads(body)
                 ref_name = payload.get('voice_ref_name', '参考音色')
-                registry = self.server.store.registry
-                mandarin_asset = registry.get('mandarin-clone-audio')
-                if mandarin_asset:
-                    asset_info = mandarin_asset['asset']
-                    label = f"普通话 · {ref_name} (AI 译配 · 68段)"
-                    return self.json_response(200, {
-                        'success': True,
-                        'track_id': 'dub-reference-zh',
-                        'label': label,
-                        'language': 'zh-CN',
-                        'audio_url': f"http://127.0.0.1:{self.server.server_port}/media/mandarin-clone-audio",
-                        'duration_ms': asset_info['duration_ms'],
-                        'segments_count': 68,
-                        'summary': f"已结合源视频的 68 段台词，使用「{ref_name}」音色完成完整普通话译配！原英文已静音，可保留 BGM 伴奏播放。"
-                    })
-                return self.json_response(200, {
-                    'success': True,
-                    'track_id': 'dub-reference-zh',
-                    'label': f"普通话 · {ref_name} (AI 译配)",
-                    'language': 'zh-CN',
-                    'audio_url': payload.get('voice_ref_url'),
-                    'duration_ms': 1004128,
-                    'segments_count': 68,
-                    'summary': f"已结合源视频时间线生成「{ref_name}」译配轨道。"
-                })
+                video_url = payload.get('video_url', '')
+                ref_url = payload.get('voice_ref_url', '')
+                max_dur = payload.get('max_duration_s')
+
+                def resolve_local_media(m_url):
+                    if not isinstance(m_url, str) or not m_url:
+                        return None
+                    t_path = self.server.native_picker.resolve_ticket_url(m_url)
+                    if t_path:
+                        return t_path
+                    p = urlsplit(m_url).path
+                    if p.startswith('/media/'):
+                        entry = self.server.store.registry.get(p[len('/media/'):])
+                        if entry and Path(entry['path']).is_file():
+                            return Path(entry['path'])
+                    return None
+
+                video_path = resolve_local_media(video_url)
+                ref_path = resolve_local_media(ref_url)
+                if not video_path:
+                    return self.fail(400, '未能定位源视频 A 的本地文件，请重新选择或上传本地视频。')
+                if not ref_path:
+                    return self.fail(400, '未能定位音色样本 B 的本地文件，请重新添加音色音频。')
+
+                job = self.server.dub_engine.start_job(
+                    video_path=video_path,
+                    ref_audio_path=ref_path,
+                    ref_name=ref_name,
+                    max_duration_s=max_dur
+                )
+                return self.json_response(202, {'success': True, 'job': job})
             except Exception as exc:
-                return self.fail(500, f"生成配音失败: {str(exc)}")
+                return self.fail(500, f"启动配音合成任务失败: {str(exc)}")
         if self.path != '/api/assets':
             return self.fail(404, 'Not found')
         temporary = None
@@ -326,7 +333,8 @@ class Handler(BaseHTTPRequestHandler):
             final = self.server.store.data / 'assets' / asset_id
             os.replace(temporary, final)
             temporary = None
-            asset = self.server.store.register(final, 'audio', asset_id, name)
+            media_kind = 'video' if self.headers.get('X-Media-Kind') == 'video' else 'audio'
+            asset = self.server.store.register(final, media_kind, asset_id, name)
             final = None
             self.json_response(201, {'asset': asset})
         except (ValueError, UnicodeError) as exc:
@@ -349,8 +357,20 @@ class Handler(BaseHTTPRequestHandler):
             return self.json_response(exc.status, exc.payload())
 
     def do_OPTIONS(self):
-        if not self.server.native_picker.handle(self):
-            self.fail(404, 'Not found')
+        if self.server.native_picker.handle(self):
+            return
+        origin = self.headers.get('Origin')
+        allowed_origins = {f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}', 'https://papaw.cc'}
+        if origin in allowed_origins:
+            self.send_response(204)
+            self.send_header('Access-Control-Allow-Origin', origin)
+            self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+            self.send_header('Access-Control-Allow-Headers', 'Content-Type, Range, X-Filename, X-Media-Kind')
+            self.send_header('Access-Control-Allow-Private-Network', 'true')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+            return
+        self.fail(404, 'Not found')
 
     def do_HEAD(self):
         self.do_GET()
@@ -373,6 +393,23 @@ class Handler(BaseHTTPRequestHandler):
                 return self.json_response(200, {'job': self.server.store.cache.job(job_id)})
             except CacheError as exc:
                 return self.json_response(exc.status, exc.payload())
+        if path.startswith('/api/dub-jobs/'):
+            rest = path[len('/api/dub-jobs/'):]
+            parts = rest.split('/')
+            job_id = parts[0]
+            if not re.fullmatch(r'[0-9a-f]{32}', job_id):
+                return self.fail(404, 'Unknown dub job')
+            if len(parts) == 1:
+                job = self.server.dub_engine.get_job(job_id)
+                if not job:
+                    return self.fail(404, 'Unknown dub job')
+                return self.json_response(200, {'job': job})
+            if len(parts) == 2 and parts[1] in ('preview.m4a', 'audio.m4a'):
+                media = self.server.dub_engine.media_path(job_id, 'preview' if parts[1] == 'preview.m4a' else 'final')
+                if not media:
+                    return self.fail(404, 'Dubbed audio not ready yet')
+                return self.send_file(media, 'audio/mp4', ranges=True)
+            return self.fail(404, 'Invalid dub job route')
         if path.startswith('/media/'):
             entry = self.server.store.registry.get(path[len('/media/'):])
             if not entry or path[len('/media/'):].startswith('playback-'):
@@ -432,6 +469,10 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Type', mime)
             self.send_header('Content-Length', str(max(0, end - start + 1)))
             self.send_header('X-Content-Type-Options', 'nosniff')
+            origin = self.headers.get('Origin')
+            if origin in ('https://papaw.cc', f'http://127.0.0.1:{self.server.server_port}', f'http://localhost:{self.server.server_port}'):
+                self.send_header('Access-Control-Allow-Origin', origin)
+                self.send_header('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges')
             if ranges:
                 self.send_header('Accept-Ranges', 'bytes')
                 if status == 206:
@@ -457,6 +498,7 @@ def create_server(port=8877, store=None, native_picker=None):
     server.daemon_threads = True
     server.store = store if store is not None else Store()
     server.native_picker = native_picker if native_picker is not None else NativePicker()
+    server.dub_engine = DubbingEngine(server.store.data)
     return server
 
 

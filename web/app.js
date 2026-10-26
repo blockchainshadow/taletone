@@ -599,7 +599,7 @@
   function renderVoiceReferences() {
     if (!ui.voiceReferences) return;
     if (!voiceReferences.length) {
-      ui.voiceReferences.innerHTML = '<p class="hint">暂无音色样本。在下方选择或拖入一段说话人音频（如 10 秒说话录音），提取音色后可结合源视频生成配音。</p>';
+      ui.voiceReferences.innerHTML = '<p class="hint">暂无音色样本。在下方选择或拖入一段说话人音频 B（5秒~1分钟即可），系统将提取 B 的声音，把视频 A 的台词翻译并用 B 的声音说出来。</p>';
       return;
     }
     const cards = voiceReferences.map((ref) => {
@@ -621,17 +621,47 @@
       const auditionBtn = document.createElement('button');
       auditionBtn.type = 'button';
       auditionBtn.className = 'btn-sm';
-      auditionBtn.textContent = ref.auditionPlaying ? '⏹ 停止试听' : '▶ 试听音色';
+      auditionBtn.textContent = ref.auditionPlaying ? '⏹ 停止试听样本' : '▶ 试听样本原声';
       auditionBtn.onclick = () => toggleAudition(ref);
 
-      const generateBtn = document.createElement('button');
-      generateBtn.type = 'button';
-      generateBtn.className = 'btn-sm btn-generate';
-      generateBtn.textContent = '✨ 结合源视频生成配音';
-      generateBtn.onclick = () => generateDubbingFromReference(ref);
+      const previewGenBtn = document.createElement('button');
+      previewGenBtn.type = 'button';
+      previewGenBtn.className = 'btn-sm';
+      previewGenBtn.disabled = Boolean(ref.generating);
+      previewGenBtn.textContent = ref.generating ? '⏳ 正在克隆合成…' : '⚡ 快速试听前 45 秒';
+      previewGenBtn.onclick = () => generateDubbingFromReference(ref, 45);
 
-      actions.append(auditionBtn, generateBtn);
+      const fullGenBtn = document.createElement('button');
+      fullGenBtn.type = 'button';
+      fullGenBtn.className = 'btn-sm btn-generate';
+      fullGenBtn.disabled = Boolean(ref.generating);
+      fullGenBtn.textContent = ref.generating ? '⏳ 合成中…' : '✨ 结合视频 A 生成全片配音';
+      fullGenBtn.onclick = () => generateDubbingFromReference(ref, null);
+
+      actions.append(auditionBtn, previewGenBtn, fullGenBtn);
       card.append(header, actions);
+
+      if (ref.jobStatus) {
+        const box = document.createElement('div');
+        box.className = 'ref-progress-box';
+        const phaseText = document.createElement('div');
+        phaseText.textContent = ref.jobStatus.phase || '正在处理…';
+        box.append(phaseText);
+        if (ref.jobStatus.total > 0) {
+          const prog = document.createElement('progress');
+          prog.className = 'ref-progress-bar';
+          prog.max = ref.jobStatus.total;
+          prog.value = ref.jobStatus.done || 0;
+          box.append(prog);
+        }
+        if (ref.jobStatus.latest_text) {
+          const sub = document.createElement('div');
+          sub.className = 'ref-subtitle-preview';
+          sub.textContent = `最新合成台词：「${ref.jobStatus.latest_text}」`;
+          box.append(sub);
+        }
+        card.append(box);
+      }
       return card;
     });
     ui.voiceReferences.replaceChildren(...cards);
@@ -671,74 +701,165 @@
     }
   }
 
-  async function generateDubbingFromReference(ref) {
-    if (!videoReady) {
-      notice('请先选择源视频。系统需要结合源视频的画面与时间线重新翻译并生成配音。', 'error');
+  async function ensureServerMediaUrl(fileOrObj, currentUrl, mediaKind) {
+    if (typeof currentUrl === 'string' && (currentUrl.startsWith(nativeOrigin) || currentUrl.startsWith('/media/') || currentUrl.startsWith('/api/'))) {
+      return currentUrl.startsWith('/') ? `${nativeOrigin}${currentUrl}` : currentUrl;
+    }
+    if (fileOrObj instanceof File) {
+      notice(`正在将本地${mediaKind === 'video' ? '视频 A' : '音色样本 B'}传送至本机 AI 引擎（不上传云端）…`, 'pending');
+      const resp = await fetch(`${nativeOrigin}/api/assets`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': fileOrObj.type || 'application/octet-stream',
+          'X-Filename': encodeURIComponent(fileOrObj.name || mediaKind),
+          'X-Media-Kind': mediaKind,
+        },
+        body: fileOrObj,
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.error || `本机传输失败 (HTTP ${resp.status})`);
+      }
+      const res = await resp.json();
+      return `${nativeOrigin}${res.asset.url}`;
+    }
+    throw new Error('无法读取本地媒体文件，请重新选择文件。');
+  }
+
+  function bindDubbedAudioToTrack(ref, trackId, label, audioUrl, durationMs, autoSelect = false) {
+    const fullAudioUrl = audioUrl.startsWith('http') ? audioUrl : `${nativeOrigin}${audioUrl}`;
+    let track = tracks.find((t) => t.id === trackId);
+    if (!track) {
+      track = {
+        id: trackId,
+        refId: ref.id,
+        name: label,
+        offset: 0,
+        metadata: { name: label, duration: (durationMs || (video.duration * 1000) || 60000) / 1000 },
+        state: 'loading',
+        audio: new Audio(),
+        url: fullAudioUrl,
+      };
+      tracks.push(track);
+    } else {
+      track.name = label;
+      if (track.url !== fullAudioUrl) {
+        track.url = fullAudioUrl;
+        track.state = 'loading';
+      }
+    }
+    setMediaOrigin(track.audio, { url: fullAudioUrl });
+    if (track.audio.src !== fullAudioUrl) {
+      track.audio.src = fullAudioUrl;
+      track.audio.preload = 'auto';
+      track.audio.onloadedmetadata = () => {
+        if (track.metadata && Number.isFinite(track.audio.duration)) {
+          track.metadata.duration = track.audio.duration;
+        }
+        track.state = 'ready';
+        renderTracks();
+        if (selected === track.id) syncAudio(true);
+      };
+      track.audio.load();
+    }
+    renderTracks();
+    if (autoSelect) selectTrack(track.id);
+  }
+
+  async function generateDubbingFromReference(ref, maxDurationSec = null) {
+    if (!videoReady || !videoFile) {
+      notice('请先在左侧选择源视频 A！系统需要识别视频 A 的台词内容并翻译，再用音色 B 说出来。', 'error');
       return;
     }
+    if (ref.generating) return;
     stopPlayback();
-    notice(`正在结合源视频台词，使用「${ref.name}」音色生成配音…`, 'pending');
-    pickerStatus(`正在调用本机 AI 模型，结合源视频台词合成「${ref.name}」配音…`, 'pending');
+    ref.generating = true;
+    ref.jobStatus = { phase: '正在准备本机 AI 识别与音色克隆任务…', done: 0, total: 0, latest_text: '' };
+    renderVoiceReferences();
 
     try {
+      const serverVideoUrl = await ensureServerMediaUrl(videoFile, videoURL, 'video');
+      const serverRefUrl = await ensureServerMediaUrl(ref.file, ref.url, 'audio');
+      ref.serverUrl = serverRefUrl;
+
+      notice(`已启动真实 AI 译配：正在识别视频 A 的语音、翻译成中文，并用「${ref.name}」的音色合成！`, 'pending');
+      pickerStatus(`本机 AI 引擎正在处理：ASR 识别视频 A → 中文翻译 → 提取「${ref.name}」音色克隆朗诵…`, 'pending');
+
       const response = await fetch(`${nativeOrigin}/api/dub-reference`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          video_url: serverVideoUrl,
+          voice_ref_url: serverRefUrl,
           voice_ref_name: ref.name,
-          voice_ref_url: ref.url,
-          target_language: 'zh'
-        })
+          target_language: 'zh',
+          max_duration_s: maxDurationSec,
+        }),
       });
       if (!response.ok) {
-        throw new Error(`本机服务返回 HTTP ${response.status}`);
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.error || `本机服务返回 HTTP ${response.status}`);
       }
-      const data = await response.json();
-      if (!data.success) {
-        throw new Error(data.error || '合成配音失败');
-      }
+      const startData = await response.json();
+      const jobId = startData.job?.id;
+      if (!jobId) throw new Error('未能创建配音合成任务');
 
-      let track = tracks.find((t) => t.id === data.track_id || t.refId === ref.id);
-      if (!track) {
-        track = {
-          id: data.track_id,
-          refId: ref.id,
-          name: data.label,
-          offset: 0,
-          metadata: { name: data.label, duration: (data.duration_ms || 1004128) / 1000 },
-          state: 'loading',
-          audio: new Audio(),
-          url: data.audio_url
-        };
-        tracks.push(track);
-      } else {
-        track.name = data.label;
-        track.url = data.audio_url;
-        track.state = 'loading';
-      }
-      setMediaOrigin(track.audio, { url: data.audio_url });
-      track.audio.src = data.audio_url;
-      track.audio.preload = 'auto';
-      track.audio.addEventListener('loadedmetadata', () => {
-        if (track.metadata) track.metadata.duration = track.audio.duration;
-        track.state = 'ready';
-        renderTracks();
-        if (selected === track.id) syncAudio(true);
-      });
+      const trackId = `dub-${jobId.slice(0, 8)}`;
+      let previewBound = false;
 
-      renderTracks();
-      selectTrack(track.id);
-      notice(data.summary || `已结合源视频生成「${ref.name}」的译配声音！原声已静音，原片 BGM 保持伴奏。点击播放即可试听！`);
-      pickerStatus(`「${ref.name}」配音生成就绪！音色样本的声音已用来朗诵源视频全部台词。`);
+      while (true) {
+        await new Promise((r) => setTimeout(r, 1500));
+        const pollResp = await fetch(`${nativeOrigin}/api/dub-jobs/${jobId}`);
+        if (!pollResp.ok) throw new Error(`轮询任务状态失败 (HTTP ${pollResp.status})`);
+        const { job } = await pollResp.json();
+        ref.jobStatus = job;
+        renderVoiceReferences();
+        notice(job.phase || '正在合成配音…', job.state === 'error' ? 'error' : 'pending');
+        pickerStatus(job.phase || '正在合成配音…', job.state === 'error' ? 'error' : 'pending');
+
+        if (job.preview_ready && job.preview_url && !previewBound && job.state === 'running') {
+          previewBound = true;
+          bindDubbedAudioToTrack(
+            ref,
+            trackId,
+            `普通话 · ${ref.name} (前段抢先试听 · 合成中 ${job.done}/${job.total})`,
+            `${job.preview_url}?t=${Date.now()}`,
+            job.duration_ms,
+            true
+          );
+          notice(`前 ${job.done} 段已用「${ref.name}」的声音合成完毕！现在即可点击播放抢先试听，后台正继续合成剩余台词…`);
+        }
+
+        if (job.state === 'ready') {
+          const scopeLabel = maxDurationSec ? `前${maxDurationSec}秒试听` : `${job.total}段全片`;
+          bindDubbedAudioToTrack(
+            ref,
+            trackId,
+            `普通话 · ${ref.name} (AI 克隆译配 · ${scopeLabel})`,
+            `${job.audio_url}?t=${Date.now()}`,
+            job.duration_ms,
+            true
+          );
+          notice(`🎉 合成完成！已用「${ref.name}」的声音把视频 A 的内容（共 ${job.total} 段）完整说出来！点击左侧「播放」立即体验。`);
+          pickerStatus(`「${ref.name}」克隆译配已完成（${job.total} 段中文台词），原英文人声已替换为该音色！`);
+          break;
+        }
+        if (job.state === 'error') {
+          throw new Error(job.error || 'AI 译配合成过程中出错');
+        }
+      }
     } catch (err) {
-      notice(`结合源视频生成配音需要本机 TaleTone 服务支持：${err.message}。请打开本机工作台 http://127.0.0.1:8877/workbench/ 运行生成。`, 'error');
+      notice(`AI 译配生成失败：${err.message}。请确认在 http://127.0.0.1:8877/workbench/ 打开页面且本机服务正常运行。`, 'error');
       pickerStatus(`配音生成失败：${err.message}`, 'error');
+    } finally {
+      ref.generating = false;
+      renderVoiceReferences();
     }
   }
 
   function addVoiceReferences(files) {
     if (!files.length) return false;
-    notice(`正在读取 ${files.length} 个音色样本…提取音色特征。没有上传云端。`, 'pending');
+    notice(`正在读取 ${files.length} 个音色样本 B…仅提取说话人声音特征，不会直接当成视频配音播放。`, 'pending');
     const customName = (ui.refName?.value || $('audioName')?.value || '').trim();
     for (const file of files) {
       const name = (files.length === 1 && customName ? customName : file.name.replace(/\.[^.]+$/, '')).slice(0, 100) || '未命名音色';
@@ -748,16 +869,11 @@
       const url = mediaURL(file);
       audio.src = url;
       audio.preload = 'metadata';
-      const ref = { id, name, file, metadata: fileMetadata(file), audio, url, auditionPlaying: false };
+      const ref = { id, name, file, metadata: fileMetadata(file), audio, url, auditionPlaying: false, generating: false, jobStatus: null };
       audio.addEventListener('loadedmetadata', () => {
         ref.metadata.duration = audio.duration;
         renderVoiceReferences();
-        if (videoReady && Math.abs(audio.duration - video.duration) < 5) {
-          notice(`「${name}」音色样本已就绪（时长 ${formatTime(audio.duration)}，检测到与源视频时长匹配）。已自动生成并绑定对应译配音轨！`);
-          generateDubbingFromReference(ref);
-        } else {
-          notice(`「${name}」音色样本已加入音色库（时长 ${formatTime(audio.duration)}）。点击「结合源视频生成配音」，系统将提取音色，重新翻译源视频并生成完整配音。`);
-        }
+        notice(`音色样本「${name}」（时长 ${formatTime(audio.duration)}）已就绪！点击「⚡ 快速试听前 45 秒」或「✨ 结合视频 A 生成全片配音」，即可用它的声音说出视频 A 的内容。`);
       });
       audio.addEventListener('error', () => {
         notice(`「${name}」音频样本无法解码，请检查文件格式。`, 'error');
@@ -961,18 +1077,5 @@
   routeSound();
   renderTracks();
   renderVoiceReferences();
-  if (inWorkbench) {
-    fetch('/api/assets').then((r) => r.json()).then((data) => {
-      const source = data.assets?.find((a) => a.kind === 'video' && (a.id === 'source' || a.id === 'source-video'));
-      if (source && !videoReady) {
-        loadVideo({
-          name: source.name,
-          size: 106647772,
-          lastModified: Date.now(),
-          type: source.mime || 'video/mp4',
-          url: source.url,
-        });
-      }
-    }).catch(() => {});
-  }
+  // Clean slate: user explicitly chooses their own Video A and Reference B.
 })();
