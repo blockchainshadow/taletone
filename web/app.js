@@ -384,6 +384,14 @@
   video.addEventListener('volumechange', () => {
     if (selected !== 'original' && !video.muted) video.muted = true;
   });
+  $('chooseVideo').addEventListener('click', () => {
+    try {
+      if (typeof ui.videoFile.showPicker === 'function') ui.videoFile.showPicker();
+      else ui.videoFile.click();
+    } catch (error) {
+      notice('浏览器未能打开文件窗口。请使用画面下方的原生“选择文件”；若当前页面是内嵌浏览器，请在 Chrome、Edge 或 Safari 中打开 https://papaw.cc 再选文件。', 'error');
+    }
+  });
   ui.videoFile.addEventListener('change', () => {
     const file = ui.videoFile.files[0];
     if (file) {
