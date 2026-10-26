@@ -17,6 +17,7 @@
   let videoReady = false;
   let wanted = false;
   let waiting = false;
+  let audioWaiting = false;
   let epoch = 0;
   let frame = null;
   let resumePosition = 0;
@@ -76,7 +77,7 @@
     if (!videoReady) {
       ui.playState.textContent = videoFile ? '视频尚未就绪' : '等待视频';
     } else if (selected === 'original') {
-      ui.playState.textContent = `${wanted ? (waiting ? '缓冲中' : '播放中') : '已暂停'} · 视频原声`;
+      ui.playState.textContent = `${wanted ? (waiting || audioWaiting ? '缓冲中' : '播放中') : '已暂停'} · 视频原声`;
     } else {
       const track = currentTrack();
       const target = video.currentTime - (track?.offset || 0);
@@ -84,7 +85,7 @@
       if (track?.state === 'ready') {
         if (target < 0) state = '配音尚未开始，原声静音';
         else if (target >= track.audio.duration) state = '配音已结束，余下画面静音';
-        else state = `${wanted ? (waiting ? '缓冲中' : '配音播放中') : '已暂停'} · 原声静音`;
+        else state = `${wanted ? (waiting || audioWaiting ? '缓冲中' : '配音播放中') : '已暂停'} · 原声静音`;
       } else if (track?.state === 'loading') state = '正在读取配音，原声静音';
       else if (track?.state === 'error') state = '配音不可播放，原声静音';
       ui.playState.textContent = state;
@@ -95,6 +96,7 @@
   function stopPlayback() {
     wanted = false;
     waiting = false;
+    audioWaiting = false;
     epoch += 1;
     video.pause();
     for (const track of tracks) track.audio?.pause();
@@ -117,6 +119,18 @@
     failPlayback(`${source}播放失败。${reason}原声不会自动替代外部配音。`, ticket);
   }
 
+  function resumeAfterAudioBuffer() {
+    if (!wanted || !audioWaiting) return;
+    audioWaiting = false;
+    // Keep audio held until the video actually emits playing. A queued pause
+    // event from the buffering hold must not cancel the user's playback intent.
+    waiting = true;
+    const ticket = epoch;
+    video.play().catch((error) => playFailure(error, ticket, '视频'));
+    notice('配音数据已就绪，正在恢复同步播放。视频原声保持静音。');
+    updateState();
+  }
+
   function playAudio(track) {
     const audio = track.audio;
     if (!audio.paused || pendingAudio.has(audio)) return;
@@ -124,7 +138,7 @@
     pendingAudio.add(audio);
     audio.play().then(() => {
       pendingAudio.delete(audio);
-      if (!wanted || selected !== track.id || video.paused || waiting || video.seeking) audio.pause();
+      if (!wanted || selected !== track.id || video.paused || waiting || audioWaiting || video.seeking) audio.pause();
     }).catch((error) => {
       pendingAudio.delete(audio);
       playFailure(error, ticket, '配音');
@@ -142,10 +156,19 @@
       audio.pause();
       const boundary = target < 0 ? 0 : audio.duration;
       if (Math.abs(audio.currentTime - boundary) > 0.1) audio.currentTime = boundary;
+      if (audioWaiting) resumeAfterAudioBuffer();
       return;
     }
-    if (force || audio.ended || Math.abs(audio.currentTime - target) > 0.18) {
+    // Assigning even the same currentTime initiates an asynchronous media seek.
+    // Do not repeatedly restart decoding at bootstrap or on every playing event.
+    const tolerance = force ? 0.025 : 0.18;
+    if (audio.ended || Math.abs(audio.currentTime - target) > tolerance) {
       audio.currentTime = Math.max(0, Math.min(target, audio.duration));
+    }
+    if (audioWaiting) {
+      audio.pause();
+      if (audio.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA && !audio.seeking) resumeAfterAudioBuffer();
+      return;
     }
     if (wanted && !video.paused && !video.seeking && !waiting) playAudio(track);
     else audio.pause();
@@ -175,6 +198,7 @@
     if (video.ended || video.currentTime >= video.duration) video.currentTime = 0;
     wanted = true;
     waiting = false;
+    audioWaiting = false;
     routeSound();
     notice(selected === 'original' ? '正在播放视频原声。' : `正在试听「${track.name}」。视频原声始终静音；配音未开始或已结束的部分保持静音。`);
     // Start both media elements inside the click gesture. Subsequent seeks and
@@ -292,8 +316,19 @@
     });
     audio.addEventListener('waiting', () => {
       if (!isCurrent() || selected !== track.id || !wanted) return;
-      stopPlayback();
-      notice('配音数据尚未就绪，已暂停画面以免失去同步。请稍后点击播放；若持续出现，请更换音频格式。原声保持静音。', 'pending');
+      const target = video.currentTime - track.offset;
+      if (target < 0 || target >= audio.duration) return;
+      // waiting is a normal decoding/buffering state, not a terminal failure.
+      // Hold both clocks but retain intent so canplay can resume automatically.
+      audioWaiting = true;
+      audio.pause();
+      video.pause();
+      notice('正在缓冲配音，已临时停住画面；数据就绪后会自动同步继续。视频原声保持静音。', 'pending');
+      updateState();
+    });
+    audio.addEventListener('canplay', () => {
+      if (!isCurrent() || selected !== track.id || !wanted || !audioWaiting) return;
+      syncAudio(true);
     });
     audio.addEventListener('ended', () => {
       if (!isCurrent() || selected !== track.id) return;
@@ -403,7 +438,7 @@
   video.addEventListener('ratechange', () => syncAudio(true));
   video.addEventListener('pause', () => {
     if (!video.paused) return;
-    if (wanted) stopPlayback();
+    if (wanted && !audioWaiting) stopPlayback();
   });
   video.addEventListener('ended', () => {
     stopPlayback();
