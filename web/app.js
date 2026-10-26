@@ -6,7 +6,7 @@
   const ui = Object.fromEntries([
     'notice', 'play', 'back', 'seek', 'clock', 'rate', 'volume', 'playState',
     'emptyVideo', 'videoLabel', 'videoFile', 'videoInfo', 'tracks', 'trackSettings',
-    'trackName', 'offset', 'trackInfo', 'remapAudio', 'projectTitle',
+    'trackName', 'offset', 'trackInfo', 'remapAudio', 'projectTitle', 'pickerStatus',
   ].map((id) => [id, $(id)]));
   let tracks = [];
   let selected = 'original';
@@ -23,10 +23,99 @@
   let resumePosition = 0;
   let pendingImport = 0;
   const pendingAudio = new WeakSet();
+  const nativeOrigin = 'http://127.0.0.1:8877';
+  const pickerButtons = ['chooseVideo', 'chooseVideoSource', 'chooseAudio', 'chooseRemapAudio'].map($);
+  let pickerPending = false;
 
   function notice(message, kind = '') {
     ui.notice.textContent = message;
     ui.notice.className = `notice ${kind}`.trim();
+  }
+
+  function pickerStatus(message, kind = '') {
+    ui.pickerStatus.textContent = message;
+    ui.pickerStatus.className = `picker-status hint ${kind}`.trim();
+  }
+
+  function checkedNativeFile(file) {
+    if (!file || typeof file.name !== 'string' || !file.name ||
+        !Number.isSafeInteger(file.size) || file.size < 0 ||
+        !Number.isSafeInteger(file.lastModified) || file.lastModified < 0 ||
+        typeof file.type !== 'string' || typeof file.url !== 'string') {
+      throw new Error('本机服务返回了无效的文件信息，请更新 TaleTone 本机服务后重试。');
+    }
+    const url = new URL(file.url);
+    if (url.origin !== nativeOrigin || !/^\/api\/native-files\/[A-Za-z0-9_-]+$/.test(url.pathname) ||
+        url.username || url.password || url.search || url.hash) {
+      throw new Error('本机服务返回了无效的媒体地址，未加载文件。');
+    }
+    return file;
+  }
+
+  async function systemPicker(kind, consume) {
+    if (pickerPending) return;
+    pickerPending = true;
+    for (const button of pickerButtons) {
+      button.disabled = true;
+      button.setAttribute('aria-busy', 'true');
+    }
+    pickerStatus(`正在等待 macOS 系统${kind === 'video' ? '视频' : '音频'}文件窗口…请在系统窗口中选择或取消；若窗口未出现，请检查 Dock 后方窗口及 macOS 自动化权限。`, 'pending');
+    try {
+      // Send only the picker kind, directly from the user's click. Media is
+      // streamed from the returned URL, never fetched into a File or Blob.
+      const response = await fetch(`${nativeOrigin}/api/native-picker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'omit',
+        body: JSON.stringify({ kind }),
+      }).catch(() => {
+        throw new Error('无法连接本机文件选择服务（127.0.0.1:8877）。请启动 TaleTone 本机服务，并允许浏览器访问本地网络；如已运行，请检查浏览器的本地网络权限。未改动当前项目，不会自动改用内嵌浏览器的文件输入框。');
+      });
+      const result = await response.json().catch(() => {
+        throw new Error(`本机服务 API 返回了非 JSON 响应（HTTP ${response.status}），请更新支持系统选择器的 TaleTone 本机服务。`);
+      });
+      if (!response.ok) {
+        throw new Error(`本机选择器 API 错误（HTTP ${response.status}）：${typeof result?.error === 'string' ? result.error : '服务未提供错误详情，请检查本机服务和 macOS 权限。'}`);
+      }
+      if (!result || typeof result.cancelled !== 'boolean' || !Array.isArray(result.files)) {
+        throw new Error('本机选择器 API 响应格式不兼容，请更新 TaleTone 本机服务。');
+      }
+      if (result.cancelled && result.files.length === 0) {
+        pickerStatus('已取消系统文件选择。当前项目、媒体关联、时间偏移和未提交的名称均未改变。');
+        return;
+      }
+      if (result.cancelled || !result.files.length || (kind === 'video' && result.files.length !== 1)) {
+        throw new Error('本机选择器返回的文件数量无效，未加载文件。');
+      }
+      const files = result.files.map(checkedNativeFile);
+      const accepted = consume(files);
+      pickerStatus(accepted === false
+        ? '系统已返回文件，但未加入项目；请查看上方提示。'
+        : `系统已选择 ${files.length} 个文件，正在通过本机服务读取；没有上传或 AI 处理。`, accepted === false ? 'error' : '');
+    } catch (error) {
+      const message = `系统文件选择失败：${error.message}`;
+      pickerStatus(message, 'error');
+      notice(message, 'error');
+    } finally {
+      pickerPending = false;
+      for (const button of pickerButtons) {
+        button.disabled = false;
+        button.removeAttribute('aria-busy');
+      }
+    }
+  }
+
+  function mediaURL(file) {
+    return file instanceof File ? URL.createObjectURL(file) : file.url;
+  }
+
+  function releaseMediaURL(url) {
+    if (url?.startsWith('blob:')) URL.revokeObjectURL(url);
+  }
+
+  function setMediaOrigin(media, file) {
+    if (file instanceof File) media.removeAttribute('crossorigin');
+    else media.crossOrigin = 'anonymous';
   }
 
   function formatTime(seconds) {
@@ -277,7 +366,7 @@
       track.audio.removeAttribute('src');
       track.audio.load();
     }
-    if (track.url) URL.revokeObjectURL(track.url);
+    releaseMediaURL(track.url);
     track.audio = null;
     track.url = null;
   }
@@ -288,9 +377,10 @@
     const audio = new Audio();
     track.audio = audio;
     track.metadata = fileMetadata(file);
-    track.url = URL.createObjectURL(file);
+    track.url = mediaURL(file);
     track.state = 'loading';
-    audio.preload = 'auto';
+    audio.preload = file instanceof File ? 'auto' : 'metadata';
+    setMediaOrigin(audio, file);
     const isCurrent = () => tracks.includes(track) && track.audio === audio;
     audio.addEventListener('loadedmetadata', () => {
       if (!isCurrent()) return;
@@ -312,7 +402,7 @@
       track.state = 'error';
       if (selected === track.id) stopPlayback();
       renderTracks();
-      notice(`「${track.name}」无法播放：文件可能损坏或编码不受支持。请重新关联 MP3 / WAV 等可解码音频。未切回原声。`, 'error');
+      notice(`「${track.name}」无法播放：${track.url?.startsWith(nativeOrigin) ? '请确认本机服务仍在运行、已允许本地网络访问，并重新关联文件；也可能是文件损坏或编码不受支持。' : '文件可能损坏或编码不受支持，请重新关联 MP3 / WAV 等可解码音频。'}未切回原声。`, 'error');
     });
     audio.addEventListener('waiting', () => {
       if (!isCurrent() || selected !== track.id || !wanted) return;
@@ -346,8 +436,9 @@
     video.pause();
     video.removeAttribute('src');
     video.load();
-    if (videoURL) URL.revokeObjectURL(videoURL);
-    videoURL = URL.createObjectURL(file);
+    releaseMediaURL(videoURL);
+    videoURL = mediaURL(file);
+    setMediaOrigin(video, file);
     videoFile = file;
     videoMetadata = fileMetadata(file);
     ui.videoInfo.textContent = describeFile(videoMetadata);
@@ -384,13 +475,24 @@
   video.addEventListener('volumechange', () => {
     if (selected !== 'original' && !video.muted) video.muted = true;
   });
-  $('chooseVideo').addEventListener('click', () => {
-    try {
-      if (typeof ui.videoFile.showPicker === 'function') ui.videoFile.showPicker();
-      else ui.videoFile.click();
-    } catch (error) {
-      notice('浏览器未能打开文件窗口。请使用画面下方的原生“选择文件”；若当前页面是内嵌浏览器，请在 Chrome、Edge 或 Safari 中打开 https://papaw.cc 再选文件。', 'error');
-    }
+  function chooseSystemVideo() {
+    return systemPicker('video', (files) => {
+      resumePosition = videoReady ? video.currentTime : resumePosition;
+      loadVideo(files[0]);
+    });
+  }
+  $('chooseVideo').addEventListener('click', chooseSystemVideo);
+  $('chooseVideoSource').addEventListener('click', chooseSystemVideo);
+  $('chooseAudio').addEventListener('click', () => systemPicker('audio', addAudioFiles));
+  $('chooseRemapAudio').addEventListener('click', () => {
+    const track = currentTrack();
+    if (!track) return;
+    systemPicker('audio', (files) => {
+      if (files.length !== 1) throw new Error('重新关联一条配音时请选择一个文件。当前关联未改变。');
+      if (!tracks.includes(track)) throw new Error('原配音已被移除或项目已切换，未关联所选文件。');
+      notice(`正在重新关联「${track.name}」…请确认所选文件是正确素材。`, 'pending');
+      attachAudio(track, files[0]);
+    });
   });
   ui.videoFile.addEventListener('change', () => {
     const file = ui.videoFile.files[0];
@@ -424,7 +526,7 @@
     stopPlayback();
     setControls(false);
     ui.videoLabel.textContent = '视频读取失败';
-    notice('无法播放这个视频。文件可能损坏或编码不受浏览器支持，请重新选择 MP4（H.264 / AAC）或 WebM。没有上传文件。', 'error');
+    notice(`无法播放这个视频。${videoURL?.startsWith(nativeOrigin) ? '请确认本机服务仍在运行、已允许本地网络访问，并重新关联视频。' : ''}文件也可能损坏或编码不受浏览器支持，请尝试 MP4（H.264 / AAC）或 WebM。没有上传文件。`, 'error');
   });
   video.addEventListener('waiting', () => {
     if (!wanted) return;
@@ -457,7 +559,7 @@
     if (!files.length) return;
     if (tracks.length + files.length > 200) {
       notice('一个项目最多保存 200 条配音，请先移除不需要的声音。', 'error');
-      return;
+      return false;
     }
     notice(`正在读取 ${files.length} 个本地音频…没有上传或 AI 处理。`, 'pending');
     const customName = $('audioName').value.trim();
@@ -471,6 +573,7 @@
     }
     $('audioFile').value = '';
     $('audioName').value = '';
+    return true;
   }
   $('addTrack').addEventListener('submit', (event) => {
     event.preventDefault();
@@ -623,7 +726,7 @@
       videoFile = null;
       video.removeAttribute('src');
       video.load();
-      if (videoURL) URL.revokeObjectURL(videoURL);
+      releaseMediaURL(videoURL);
       videoURL = null;
       tracks = project.tracks;
       selected = project.selected;

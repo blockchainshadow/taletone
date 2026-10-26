@@ -16,6 +16,7 @@ from urllib.parse import unquote, urlsplit
 from hls_packager import Packager, inspect_stream
 from demand_cache import CacheController, CacheError
 from voice_profiles import profile
+from native_picker import NativePicker
 
 ROOT = Path(__file__).resolve().parent
 MAX_UPLOAD = 512 * 1024 * 1024
@@ -237,6 +238,8 @@ class Handler(BaseHTTPRequestHandler):
             self.fail(400, str(exc))
 
     def do_POST(self):
+        if self.server.native_picker.handle(self):
+            return
         if not self.write_allowed():
             return
         if self.path in ('/api/playback', '/api/cache/status', '/api/cache/prepare'):
@@ -306,10 +309,16 @@ class Handler(BaseHTTPRequestHandler):
         except CacheError as exc:
             return self.json_response(exc.status, exc.payload())
 
+    def do_OPTIONS(self):
+        if not self.server.native_picker.handle(self):
+            self.fail(404, 'Not found')
+
     def do_HEAD(self):
         self.do_GET()
 
     def do_GET(self):
+        if self.server.native_picker.handle(self):
+            return
         path = urlsplit(self.path).path
         if path == '/api/project':
             return self.json_response(200, {'project': self.server.store.project()})
@@ -400,10 +409,11 @@ class Handler(BaseHTTPRequestHandler):
                 pass
 
 
-def create_server(port=8877, store=None):
+def create_server(port=8877, store=None, native_picker=None):
     server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
     server.daemon_threads = True
     server.store = store if store is not None else Store()
+    server.native_picker = native_picker if native_picker is not None else NativePicker()
     return server
 
 

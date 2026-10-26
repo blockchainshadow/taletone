@@ -52,6 +52,9 @@ summary { cursor: pointer; border-radius: 5px; }
 .notice { min-height: 42px; padding: 10px 13px; background: #edf2e9; border: 1px solid #dde5d8; border-radius: 8px; color: #47634e; font-size: 12px; margin-bottom: 18px; overflow-wrap: anywhere; }
 .notice.error { color: var(--error); background: #fff0ec; border-color: #efcec5; }
 .notice.pending { color: #705923; background: #fcf7e8; border-color: #e9dfbe; }
+.picker-status { margin: -6px 0 18px; padding: 10px 13px; border: 1px solid var(--line); border-radius: 8px; background: white; }
+.picker-status.pending { color: #705923; background: #fcf7e8; border-color: #e9dfbe; }
+.picker-status.error { color: var(--error); background: #fff0ec; border-color: #efcec5; }
 .listening-layout { display: grid; grid-template-columns: minmax(0, 1fr) 325px; gap: 32px; align-items: start; }
 .player-card { min-width: 0; border: 1px solid var(--line); background: white; border-radius: 15px; overflow: hidden; box-shadow: 0 5px 20px #24392c05; }
 .video-stage { position: relative; aspect-ratio: 16/9; background: #15251e; }
@@ -77,9 +80,9 @@ select { padding: 6px; min-height: 36px; color: var(--text); border: 1px solid v
 #playState { text-align: right; }
 .source-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 14px 20px; border-top: 1px solid var(--line); background: #fcfdf9; }
 .source-row label { min-height: 34px; padding: 5px 9px; font-size: 11px; }
-.native-video-picker { display: flex; flex-direction: column; gap: 6px; min-width: 0; max-width: 100%; }
-.native-video-picker input { display: block; max-width: 100%; }
-#filePickerHelp { flex-basis: 100%; }
+.browser-picker { width: 100%; min-width: 0; margin: 10px 0; color: var(--muted); font-size: 12px; }
+.browser-picker summary { padding: 5px 0; }
+.browser-picker input { max-width: 100%; }
 #videoInfo { flex: 1; min-width: 100px; font-size: 10px; }
 .voice-panel > .small { margin-top: 6px; }
 .voice-choices { display: grid; gap: 9px; margin: 21px 0 16px; }
@@ -97,6 +100,7 @@ select { padding: 6px; min-height: 36px; color: var(--text); border: 1px solid v
 input[type="file"] { font-size: 11px; padding: 6px; }
 input[type="file"]::file-selector-button { border: 0; border-radius: 4px; background: var(--soft); color: var(--accent); padding: 5px 7px; margin-right: 7px; cursor: pointer; }
 .upload-panel > button { font-size: 12px; width: 100%; margin-bottom: 10px; }
+.track-settings > button:not(.danger) { width: 100%; margin-top: 12px; white-space: normal; }
 .danger { color: var(--error); border-color: #e0bdb3; font-size: 12px; margin-top: 13px; }
 .project-help { margin-top: 25px; color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); padding-bottom: 22px; }
 .project-help summary { color: var(--accent); padding: 8px 0; }
