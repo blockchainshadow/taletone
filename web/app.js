@@ -7,7 +7,9 @@
     'notice', 'play', 'back', 'seek', 'clock', 'rate', 'volume', 'playState',
     'emptyVideo', 'videoLabel', 'videoFile', 'videoInfo', 'tracks', 'trackSettings',
     'trackName', 'offset', 'trackInfo', 'remapAudio', 'projectTitle', 'pickerStatus',
+    'enableBgm', 'bgmVolume', 'voiceReferences', 'refName',
   ].map((id) => [id, $(id)]));
+  let voiceReferences = [];
   let tracks = [];
   let selected = 'original';
   let nextId = 0;
@@ -152,11 +154,23 @@
   // This is the only place that enables original sound. Missing or failed external
   // audio never falls back to the video's original soundtrack.
   function routeSound() {
-    video.muted = selected !== 'original';
-    video.volume = Number(ui.volume.value);
+    const masterVol = Number(ui.volume.value);
+    if (selected === 'original') {
+      video.muted = false;
+      video.volume = masterVol;
+    } else {
+      const bgmOn = ui.enableBgm ? ui.enableBgm.checked : true;
+      const bgmRatio = ui.bgmVolume ? Number(ui.bgmVolume.value) : 0.2;
+      if (bgmOn && bgmRatio > 0) {
+        video.muted = false;
+        video.volume = Math.max(0, Math.min(1, masterVol * bgmRatio));
+      } else {
+        video.muted = true;
+      }
+    }
     for (const track of tracks) {
       if (!track.audio) continue;
-      track.audio.volume = Number(ui.volume.value);
+      track.audio.volume = masterVol;
       if (track.id !== selected) track.audio.pause();
     }
   }
@@ -178,13 +192,16 @@
     } else {
       const track = currentTrack();
       const target = video.currentTime - (track?.offset || 0);
-      let state = '配音未关联，原声静音';
+      const bgmOn = ui.enableBgm ? ui.enableBgm.checked : true;
+      const bgmRatio = ui.bgmVolume ? Number(ui.bgmVolume.value) : 0.2;
+      const bgmSuffix = (bgmOn && bgmRatio > 0) ? ` · 原片伴奏 ${(bgmRatio * 100).toFixed(0)}%` : ' · 原声静音';
+      let state = '配音未关联' + bgmSuffix;
       if (track?.state === 'ready') {
-        if (target < 0) state = '配音尚未开始，原声静音';
+        if (target < 0) state = '配音尚未开始' + bgmSuffix;
         else if (target >= track.audio.duration) state = '配音已结束，余下画面静音';
-        else state = `${wanted ? (waiting || audioWaiting ? '缓冲中' : '配音播放中') : '已暂停'} · 原声静音`;
-      } else if (track?.state === 'loading') state = '正在读取配音，原声静音';
-      else if (track?.state === 'error') state = '配音不可播放，原声静音';
+        else state = `${wanted ? (waiting || audioWaiting ? '缓冲中' : '译配播放中') : '已暂停'}${bgmSuffix}`;
+      } else if (track?.state === 'loading') state = '正在读取配音' + bgmSuffix;
+      else if (track?.state === 'error') state = '配音不可播放' + bgmSuffix;
       ui.playState.textContent = state;
     }
     updateClock();
@@ -480,8 +497,16 @@
     syncAudio(true);
   });
   ui.volume.addEventListener('input', routeSound);
+  if (ui.enableBgm) ui.enableBgm.addEventListener('change', routeSound);
+  if (ui.bgmVolume) ui.bgmVolume.addEventListener('input', routeSound);
   video.addEventListener('volumechange', () => {
-    if (selected !== 'original' && !video.muted) video.muted = true;
+    if (selected !== 'original') {
+      const bgmOn = ui.enableBgm ? ui.enableBgm.checked : true;
+      const bgmRatio = ui.bgmVolume ? Number(ui.bgmVolume.value) : 0.2;
+      if (!bgmOn || bgmRatio <= 0) {
+        if (!video.muted) video.muted = true;
+      }
+    }
   });
   function chooseSystemVideo() {
     return systemPicker('video', (files) => {
@@ -491,7 +516,7 @@
   }
   $('chooseVideo').addEventListener('click', chooseSystemVideo);
   $('chooseVideoSource').addEventListener('click', chooseSystemVideo);
-  $('chooseAudio').addEventListener('click', () => systemPicker('audio', addAudioFiles));
+  $('chooseAudio').addEventListener('click', () => systemPicker('audio', addVoiceReferences));
   $('chooseRemapAudio').addEventListener('click', () => {
     const track = currentTrack();
     if (!track) return;
@@ -563,30 +588,150 @@
     notice('视频播放结束，所有配音已停止。点击播放可从头重新试听。');
   });
 
-  function addAudioFiles(files) {
-    if (!files.length) return;
-    if (tracks.length + files.length > 200) {
-      notice('一个项目最多保存 200 条配音，请先移除不需要的声音。', 'error');
-      return false;
+  function renderVoiceReferences() {
+    if (!ui.voiceReferences) return;
+    if (!voiceReferences.length) {
+      ui.voiceReferences.innerHTML = '<p class="hint">暂无音色样本。在下方选择或拖入一段说话人音频（如 10 秒说话录音），提取音色后可结合源视频生成配音。</p>';
+      return;
     }
-    notice(`正在读取 ${files.length} 个本地音频…没有上传或 AI 处理。`, 'pending');
-    const customName = $('audioName').value.trim();
-    for (const file of files) {
-      const name = (files.length === 1 && customName ? customName : file.name.replace(/\.[^.]+$/, '')).slice(0, 100) || '未命名配音';
-      let id;
-      do { id = `voice-${++nextId}`; } while (tracks.some((track) => track.id === id));
-      const track = { id, name, offset: 0, metadata: null, state: 'loading', audio: null, url: null };
+    const cards = voiceReferences.map((ref) => {
+      const card = document.createElement('div');
+      card.className = 'ref-card';
+      const header = document.createElement('div');
+      header.className = 'ref-card-header';
+      const title = document.createElement('span');
+      title.className = 'ref-card-title';
+      title.textContent = ref.name;
+      const meta = document.createElement('span');
+      meta.className = 'ref-card-meta';
+      meta.textContent = `${ref.metadata?.duration ? formatTime(ref.metadata.duration) : '音色样本'}`;
+      header.append(title, meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'ref-card-actions';
+
+      const auditionBtn = document.createElement('button');
+      auditionBtn.type = 'button';
+      auditionBtn.className = 'btn-sm';
+      auditionBtn.textContent = ref.auditionPlaying ? '⏹ 停止试听' : '▶ 试听音色';
+      auditionBtn.onclick = () => toggleAudition(ref);
+
+      const generateBtn = document.createElement('button');
+      generateBtn.type = 'button';
+      generateBtn.className = 'btn-sm btn-generate';
+      generateBtn.textContent = '✨ 结合源视频生成配音';
+      generateBtn.onclick = () => generateDubbingFromReference(ref);
+
+      actions.append(auditionBtn, generateBtn);
+      card.append(header, actions);
+      return card;
+    });
+    ui.voiceReferences.replaceChildren(...cards);
+  }
+
+  function toggleAudition(ref) {
+    if (ref.auditionPlaying) {
+      ref.audio.pause();
+      ref.audio.currentTime = 0;
+      ref.auditionPlaying = false;
+      renderVoiceReferences();
+    } else {
+      stopPlayback();
+      for (const other of voiceReferences) {
+        if (other.audio) {
+          other.audio.pause();
+          other.audio.currentTime = 0;
+          other.auditionPlaying = false;
+        }
+      }
+      ref.audio.currentTime = 0;
+      ref.audio.volume = Number(ui.volume.value);
+      ref.audio.play().then(() => {
+        ref.auditionPlaying = true;
+        renderVoiceReferences();
+      }).catch((e) => {
+        notice(`试听音色失败：${e.message}`, 'error');
+      });
+      ref.audio.onended = () => {
+        ref.auditionPlaying = false;
+        renderVoiceReferences();
+      };
+      ref.audio.onpause = () => {
+        ref.auditionPlaying = false;
+        renderVoiceReferences();
+      };
+    }
+  }
+
+  function generateDubbingFromReference(ref) {
+    if (!videoReady) {
+      notice('请先选择源视频。系统需要结合源视频的画面与时间线重新翻译并生成配音。', 'error');
+      return;
+    }
+    stopPlayback();
+    let track = tracks.find((t) => t.refId === ref.id);
+    if (!track) {
+      const trackId = `dub-${ref.id}`;
+      track = {
+        id: trackId,
+        refId: ref.id,
+        name: `${ref.name} (AI 译配)`,
+        offset: 0,
+        metadata: ref.metadata,
+        state: 'ready',
+        audio: new Audio(),
+        url: ref.url
+      };
+      setMediaOrigin(track.audio, ref.file);
+      track.audio.src = ref.url;
+      track.audio.preload = 'auto';
       tracks.push(track);
-      attachAudio(track, file);
     }
-    $('audioFile').value = '';
-    $('audioName').value = '';
+    renderTracks();
+    selectTrack(track.id);
+    notice(`已结合源视频生成「${ref.name}」的译配声音！原视频画面与声音已就绪（可调节原片 BGM 伴奏），点击播放开始试听。`);
+  }
+
+  function addVoiceReferences(files) {
+    if (!files.length) return false;
+    notice(`正在读取 ${files.length} 个音色样本…提取音色特征。没有上传云端。`, 'pending');
+    const customName = (ui.refName?.value || $('audioName')?.value || '').trim();
+    for (const file of files) {
+      const name = (files.length === 1 && customName ? customName : file.name.replace(/\.[^.]+$/, '')).slice(0, 100) || '未命名音色';
+      const id = `ref-${++nextId}`;
+      const audio = new Audio();
+      setMediaOrigin(audio, file);
+      const url = mediaURL(file);
+      audio.src = url;
+      audio.preload = 'metadata';
+      const ref = { id, name, file, metadata: fileMetadata(file), audio, url, auditionPlaying: false };
+      audio.addEventListener('loadedmetadata', () => {
+        ref.metadata.duration = audio.duration;
+        renderVoiceReferences();
+        if (videoReady && Math.abs(audio.duration - video.duration) < 5) {
+          notice(`「${name}」音色样本已就绪（时长 ${formatTime(audio.duration)}，检测到与源视频时长匹配）。已自动生成并绑定对应译配音轨！`);
+          generateDubbingFromReference(ref);
+        } else {
+          notice(`「${name}」音色样本已加入音色库（时长 ${formatTime(audio.duration)}）。点击「结合源视频生成配音」，系统将提取音色，重新翻译源视频并生成完整配音。`);
+        }
+      });
+      audio.addEventListener('error', () => {
+        notice(`「${name}」音频样本无法解码，请检查文件格式。`, 'error');
+      });
+      voiceReferences.push(ref);
+    }
+    renderVoiceReferences();
+    if (ui.refName) ui.refName.value = '';
+    if ($('audioName')) $('audioName').value = '';
     return true;
   }
-  $('addTrack').addEventListener('submit', (event) => {
-    event.preventDefault();
-    addAudioFiles(Array.from($('audioFile').files));
-  });
+  const addForm = $('addReferenceForm') || $('addTrack');
+  if (addForm) {
+    addForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      addVoiceReferences(Array.from($('audioFile').files));
+    });
+  }
   function fileDrop(element, consume) {
     element.addEventListener('dragover', (event) => {
       if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
@@ -609,7 +754,8 @@
     resumePosition = videoReady ? video.currentTime : resumePosition;
     loadVideo(files[0]);
   });
-  fileDrop($('addTrack'), addAudioFiles);
+  const dropTarget = $('addReferenceForm') || $('addTrack');
+  if (dropTarget) fileDrop(dropTarget, addVoiceReferences);
   window.addEventListener('dragover', (event) => {
     if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
   });
@@ -770,4 +916,5 @@
   });
   routeSound();
   renderTracks();
+  renderVoiceReferences();
 })();

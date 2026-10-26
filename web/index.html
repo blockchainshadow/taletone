@@ -7,8 +7,8 @@
   <meta name="description" content="声伴 TaleTone：让故事，用熟悉的声音讲。在浏览器里打开本地视频、切换多语言配音，媒体不上传。AI 配音在本地应用中完成。">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; media-src 'self' blob:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>声伴 TaleTone · 让故事，用熟悉的声音讲。</title>
-  <link rel="stylesheet" href="./style.css?v=native-workbench-5">
-  <script src="./app.js?v=native-workbench-5" defer></script>
+  <link rel="stylesheet" href="./style.css?v=voice-ref-bgm-6">
+  <script src="./app.js?v=voice-ref-bgm-6" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#player">跳到播放器</a>
@@ -38,20 +38,39 @@
       <div class="player-controls">
         <input id="seek" class="seek" type="range" min="0" max="1" value="0" step="0.01" aria-label="视频进度，单位秒" disabled>
         <div class="transport"><button id="play" class="primary" disabled>播放</button><button id="back" disabled aria-label="后退十秒">−10 秒</button><output id="clock" aria-label="当前时间与总时长">00:00 / 00:00</output><label class="rate-label"><span class="sr-only">播放速度</span><select id="rate" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label></div>
-        <div class="volume-row"><label for="volume">音量 <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8"></label><span id="playState">等待视频</span></div>
+        <div class="volume-row">
+          <label for="volume">主音量 <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8"></label>
+          <label for="bgmVolume" class="bgm-control" title="播放译配声音时，保留原视频背景音乐/环境声">
+            <input id="enableBgm" type="checkbox" checked> 保留原片 BGM
+            <input id="bgmVolume" type="range" min="0" max="0.5" step="0.01" value="0.2" aria-label="原片 BGM 音量">
+          </label>
+          <span id="playState">等待视频</span>
+        </div>
       </div>
       <div class="source-row"><button id="chooseVideoSource" type="button" class="primary" aria-describedby="pickerStatus">系统选择视频 / 重新关联</button><span id="videoInfo" class="hint">未选择视频</span><details class="browser-picker"><summary>独立浏览器备用：普通文件选择器</summary><label class="field" for="videoFile">浏览器选择视频<input id="videoFile" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,.mkv" aria-describedby="filePickerHelp"></label><p id="filePickerHelp" class="hint">仅作为独立 Chrome、Edge、Safari 的备用方式；内嵌宿主的此输入框可能立即取消。系统按钮使用本机服务，不会退回此输入框。也可从 Finder 把一个视频拖入画面。</p></details></div>
     </section>
     <aside class="voice-panel" aria-labelledby="voicesHeading">
-      <p class="eyebrow">换个声音，继续听</p><h2 id="voicesHeading">你想听哪一种？</h2><p class="muted small">共享视频进度，切换声音不从头开始。</p>
-      <div id="tracks" class="voice-choices" role="group" aria-label="选择播放声音"></div>
-      <form id="addTrack" class="upload-panel">
-        <h3>添加已有配音</h3><p class="hint">系统窗口可多选音频或已有配音 MP4，确认后直接添加；也可从 Finder 拖到此框。</p>
-        <label class="field" for="audioName">声音 / 语言名称<input id="audioName" maxlength="100" placeholder="例如：中文 · 温柔女声"></label>
-        <button id="chooseAudio" type="button" class="primary" aria-describedby="pickerStatus">系统选择音频（可多选）</button>
-        <details class="browser-picker"><summary>独立浏览器备用：普通文件选择器</summary><label class="field" for="audioFile">浏览器选择音频或配音成片（可多选）<input id="audioFile" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus,.mp4,.mov,.m4v" multiple required></label><button type="submit">添加浏览器所选配音</button><p class="hint">内嵌宿主的此输入框可能立即取消；请选择上方系统按钮或从 Finder 拖入，不代表此输入框已修复。</p></details>
-        <p class="hint">支持浏览器可解码的 MP3、WAV、M4A，以及已有配音 MP4 的声音。不上传媒体，不会翻译、克隆声音或生成音频。</p>
-      </form>
+      <div class="voice-section">
+        <p class="eyebrow">换个声音，继续听</p>
+        <h2 id="voicesHeading">播放声音</h2>
+        <p class="muted small">选择原声或生成的译配音轨，切换声音不从头开始。</p>
+        <div id="tracks" class="voice-choices" role="group" aria-label="选择播放声音"></div>
+      </div>
+      <section class="reference-section" aria-labelledby="referenceHeading">
+        <div class="section-title-row">
+          <h3 id="referenceHeading">音色参考库</h3>
+          <span class="badge">用于 AI 译配</span>
+        </div>
+        <p class="hint">添加一段说话人音频（5秒~1分钟即可）。系统提取其音色特征，结合源视频重新翻译并生成配音，而不是直接播放该样本。</p>
+        <div id="voiceReferences" class="reference-list"></div>
+        <form id="addReferenceForm" class="upload-panel">
+          <h4>添加音色样本</h4>
+          <label class="field" for="refName">音色名称<input id="refName" maxlength="100" placeholder="例如：普通话 · 沉稳男声"></label>
+          <button id="chooseAudio" type="button" class="primary" aria-describedby="pickerStatus">系统选择音色样本（可多选）</button>
+          <details class="browser-picker"><summary>独立浏览器备用：普通文件选择器</summary><label class="field" for="audioFile">浏览器选择音色样本<input id="audioFile" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus,.mp4,.mov,.m4v" multiple></label><button type="submit">添加所选样本</button></details>
+          <p class="hint">支持 MP3、WAV、M4A 等音色音频。添加后点击音色卡片中的「结合源视频生成配音」，生成完整译配。</p>
+        </form>
+      </section>
       <section id="trackSettings" class="track-settings" aria-labelledby="settingsHeading" hidden>
         <h3 id="settingsHeading">当前配音设置</h3><label class="field" for="trackName">声音名称<input id="trackName" maxlength="100"></label><label class="field" for="offset">时间偏移（秒）<input id="offset" type="number" min="-86400" max="86400" step="0.01" value="0"></label><p class="hint">正数：延后配音；负数：跳过配音开头。配音结束后画面继续，保持静音，绝不切回原声。</p><button id="chooseRemapAudio" type="button" aria-describedby="pickerStatus">系统重新关联当前配音（请选择一个文件）</button><details class="browser-picker"><summary>独立浏览器备用：重新关联</summary><label class="field" for="remapAudio">浏览器重新关联当前配音<input id="remapAudio" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus,.mp4,.mov,.m4v"></label></details><p id="trackInfo" class="hint"></p><button id="removeTrack" class="danger">移除此配音</button>
       </section>
