@@ -453,9 +453,7 @@
     notice('视频播放结束，所有配音已停止。点击播放可从头重新试听。');
   });
 
-  $('addTrack').addEventListener('submit', (event) => {
-    event.preventDefault();
-    const files = Array.from($('audioFile').files);
+  function addAudioFiles(files) {
     if (!files.length) return;
     if (tracks.length + files.length > 200) {
       notice('一个项目最多保存 200 条配音，请先移除不需要的声音。', 'error');
@@ -473,6 +471,41 @@
     }
     $('audioFile').value = '';
     $('audioName').value = '';
+  }
+  $('addTrack').addEventListener('submit', (event) => {
+    event.preventDefault();
+    addAudioFiles(Array.from($('audioFile').files));
+  });
+  function fileDrop(element, consume) {
+    element.addEventListener('dragover', (event) => {
+      if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+    });
+    element.addEventListener('drop', (event) => {
+      const files = Array.from(event.dataTransfer?.files || []);
+      if (!files.length) return;
+      event.preventDefault();
+      event.stopPropagation();
+      consume(files);
+    });
+  }
+  fileDrop(document.querySelector('.video-stage'), (files) => {
+    if (files.length !== 1) {
+      notice('画面区域一次只能放入一个视频。配音请拖到右侧“添加已有配音”区域。', 'error');
+      return;
+    }
+    resumePosition = videoReady ? video.currentTime : resumePosition;
+    loadVideo(files[0]);
+  });
+  fileDrop($('addTrack'), addAudioFiles);
+  window.addEventListener('dragover', (event) => {
+    if (Array.from(event.dataTransfer?.types || []).includes('Files')) event.preventDefault();
+  });
+  window.addEventListener('drop', (event) => {
+    if (!Array.from(event.dataTransfer?.types || []).includes('Files')) return;
+    event.preventDefault();
+    notice('请把视频拖到画面区域，把配音拖到右侧“添加已有配音”区域。', 'error');
   });
   ui.trackName.addEventListener('change', () => {
     const track = currentTrack();

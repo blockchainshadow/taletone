@@ -7,8 +7,8 @@
   <meta name="description" content="声伴 TaleTone：让故事，用熟悉的声音讲。在浏览器里打开本地视频、切换多语言配音，媒体不上传。AI 配音在本地应用中完成。">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; media-src 'self' blob:; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>声伴 TaleTone · 让故事，用熟悉的声音讲。</title>
-  <link rel="stylesheet" href="./style.css?v=file-picker-2">
-  <script src="./app.js?v=file-picker-2" defer></script>
+  <link rel="stylesheet" href="./style.css?v=file-drop-3">
+  <script src="./app.js?v=file-drop-3" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#player">跳到播放器</a>
@@ -33,18 +33,19 @@
   <p id="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">准备就绪。先选择一个本地视频，文件不会离开你的设备。</p>
   <div class="listening-layout">
     <section id="player" class="player-card" aria-label="视频播放器" tabindex="-1">
-      <div class="video-stage"><video id="video" playsinline preload="metadata" disablepictureinpicture disableremoteplayback aria-label="本地视频画面；请使用下方播放控件"></video><div id="emptyVideo" class="empty-video"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="10" width="38" height="28" rx="5"/><path d="m21 18 10 6-10 6z"/></svg><strong>从你的故事开始</strong><span>视频留在本机，这里只负责播放</span><button id="chooseVideo" type="button" class="primary">选择本地视频</button><span>未弹出窗口？请使用画面下方的原生“选择文件”。</span></div><span id="videoLabel" class="video-label" hidden>本地视频</span></div>
+      <div class="video-stage"><video id="video" playsinline preload="metadata" disablepictureinpicture disableremoteplayback aria-label="本地视频画面；请使用下方播放控件"></video><div id="emptyVideo" class="empty-video"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="10" width="38" height="28" rx="5"/><path d="m21 18 10 6-10 6z"/></svg><strong>把视频从 Finder 拖到这里</strong><span>直接拖入文件，不需要弹出选择窗口；媒体不上传</span><button id="chooseVideo" type="button" class="primary">或选择本地视频</button><span>配音文件请拖到右侧“添加已有配音”区域。</span></div><span id="videoLabel" class="video-label" hidden>本地视频</span></div>
       <div class="player-controls">
         <input id="seek" class="seek" type="range" min="0" max="1" value="0" step="0.01" aria-label="视频进度，单位秒" disabled>
         <div class="transport"><button id="play" class="primary" disabled>播放</button><button id="back" disabled aria-label="后退十秒">−10 秒</button><output id="clock" aria-label="当前时间与总时长">00:00 / 00:00</output><label class="rate-label"><span class="sr-only">播放速度</span><select id="rate" disabled><option value="0.75">0.75×</option><option value="1" selected>1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select></label></div>
         <div class="volume-row"><label for="volume">音量 <input id="volume" type="range" min="0" max="1" step="0.01" value="0.8"></label><span id="playState">等待视频</span></div>
       </div>
-      <div class="source-row"><label class="native-video-picker" for="videoFile">打开 / 重新关联视频<input id="videoFile" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,.mkv" aria-describedby="filePickerHelp"></label><span id="videoInfo" class="hint">未选择视频</span><p id="filePickerHelp" class="hint">文件窗口应由浏览器打开。若当前内嵌页面不支持，请在 Chrome、Edge 或 Safari 中打开 https://papaw.cc 后选择文件；不需要上传或粘贴本地路径。</p></div>
+      <div class="source-row"><label class="native-video-picker" for="videoFile">打开 / 重新关联视频<input id="videoFile" type="file" accept="video/*,.mp4,.webm,.mov,.m4v,.mkv" aria-describedby="filePickerHelp"></label><span id="videoInfo" class="hint">未选择视频</span><p id="filePickerHelp" class="hint">点击没有反应？请从 Finder 把一个视频拖入上方画面，配音拖入右侧添加区。内嵌宿主可能不支持系统文件窗口；独立 Chrome、Edge 或 Safari 仍可用文件选择器。不上传媒体，不读取任意本地路径。</p></div>
     </section>
     <aside class="voice-panel" aria-labelledby="voicesHeading">
       <p class="eyebrow">换个声音，继续听</p><h2 id="voicesHeading">你想听哪一种？</h2><p class="muted small">共享视频进度，切换声音不从头开始。</p>
       <div id="tracks" class="voice-choices" role="group" aria-label="选择播放声音"></div>
       <form id="addTrack" class="upload-panel">
+        <p class="hint">把音频或已有配音 MP4 从 Finder 拖到此框，会直接添加；也可使用下方选择器。</p>
         <h3>添加已有配音</h3><label class="field" for="audioName">声音 / 语言名称<input id="audioName" maxlength="100" placeholder="例如：中文 · 温柔女声"></label><label class="field" for="audioFile">本地音频或配音成片（可多选）<input id="audioFile" type="file" accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.flac,.opus,.mp4,.mov,.m4v" multiple required></label><button type="submit">添加配音</button><p class="hint">支持浏览器可解码的 MP3、WAV、M4A，以及已有配音 MP4 的声音。不上传媒体，不会翻译、克隆声音或生成音频。</p>
       </form>
       <section id="trackSettings" class="track-settings" aria-labelledby="settingsHeading" hidden>
