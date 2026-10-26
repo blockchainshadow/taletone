@@ -5,10 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#f7f7f2">
   <meta name="description" content="声伴 TaleTone：让故事，用熟悉的声音讲。在浏览器里打开本地视频、切换多语言配音，媒体不上传。AI 配音在本地应用中完成。">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; media-src 'self' blob: http://127.0.0.1:8877; img-src 'self' data:; connect-src http://127.0.0.1:8877; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; media-src 'self' blob:; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
   <title>声伴 TaleTone · 让故事，用熟悉的声音讲。</title>
-  <link rel="stylesheet" href="./style.css?v=native-picker-4">
-  <script src="./app.js?v=native-picker-4" defer></script>
+  <link rel="stylesheet" href="./style.css?v=native-workbench-5">
+  <script src="./app.js?v=native-workbench-5" defer></script>
 </head>
 <body>
 <a class="skip-link" href="#player">跳到播放器</a>
@@ -20,7 +20,7 @@
   <section class="intro" aria-labelledby="heading">
     <p class="eyebrow">一个故事 · 多种声音</p><h1 id="heading">让故事，用熟悉的声音讲。</h1>
     <p class="muted">打开自己的视频，放入准备好的配音。切换语言，让熟悉的声音陪你看。</p>
-    <p class="mode-note">这里是<strong>浏览器本地播放器</strong>，无需账号；AI 翻译、声音生成请使用 <a href="https://github.com/blockchainshadow/taletone#readme" target="_blank" rel="noopener noreferrer">TaleTone 本地应用 ↗</a>。网页不会调用 AI。</p>
+    <p class="mode-note">内嵌环境请<a href="http://127.0.0.1:8877/workbench/">进入本机工作台</a>，在那里调用 macOS 系统选择框。需先运行本机 TaleTone 服务；媒体不上传。公开网页也可直接读取浏览器选择或拖入的文件。AI 制作仍需本机应用。</p>
   </section>
   <details id="guide" class="guide" open>
     <summary>第一次使用？三步开始 <span>可随时展开</span></summary>
@@ -31,7 +31,7 @@
     <div class="project-actions"><button id="exportProject">导出项目 JSON</button><label class="file-button" for="importProject">导入项目 JSON<input id="importProject" type="file" accept=".json,application/json"></label></div>
   </section>
   <p id="notice" class="notice" role="status" aria-live="polite" aria-atomic="true">准备就绪。先选择一个本地视频，文件不会离开你的设备。</p>
-  <p id="pickerStatus" class="picker-status hint" role="status" aria-live="polite" aria-atomic="true">系统选择器需要本机 TaleTone 服务（127.0.0.1:8877）运行，并允许浏览器访问本地网络。内嵌浏览器的普通文件输入框可能不工作；也可从 Finder 拖入媒体。</p>
+  <p id="pickerStatus" class="picker-status hint" role="status" aria-live="polite" aria-atomic="true">内嵌环境的系统选择器在本机工作台运行（127.0.0.1:8877/workbench/），不从 HTTPS 网页跨域访问本机，也不关闭浏览器安全限制。进入前请导出当前项目设置；媒体需重新关联。</p>
   <div class="listening-layout">
     <section id="player" class="player-card" aria-label="视频播放器" tabindex="-1">
       <div class="video-stage"><video id="video" playsinline preload="metadata" disablepictureinpicture disableremoteplayback aria-label="本地视频画面；请使用下方播放控件"></video><div id="emptyVideo" class="empty-video"><svg viewBox="0 0 48 48" aria-hidden="true"><rect x="5" y="10" width="38" height="28" rx="5"/><path d="m21 18 10 6-10 6z"/></svg><strong>打开自己的本地视频</strong><span>系统文件窗口或 Finder 拖入，媒体不上传</span><button id="chooseVideo" type="button" class="primary" aria-describedby="pickerStatus">系统选择视频</button><span>配音文件请拖到右侧“添加已有配音”区域。</span></div><span id="videoLabel" class="video-label" hidden>本地视频</span></div>

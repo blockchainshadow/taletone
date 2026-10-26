@@ -19,6 +19,7 @@ from voice_profiles import profile
 from native_picker import NativePicker
 
 ROOT = Path(__file__).resolve().parent
+WEB_ROOT = Path(os.environ.get('TALETONE_WEB_ROOT', ROOT.parent / 'web')).resolve()
 MAX_UPLOAD = 512 * 1024 * 1024
 
 
@@ -347,6 +348,10 @@ class Handler(BaseHTTPRequestHandler):
                     return self.fail(404, 'Unknown HLS media')
                 mime = 'application/vnd.apple.mpegurl' if media.suffix == '.m3u8' else 'video/mp4' if media.suffix == '.mp4' else 'video/iso.segment'
                 return self.send_file(media, mime, ranges=True)
+        workbench = {'/workbench/': 'index.html', '/workbench/app.js': 'app.js', '/workbench/style.css': 'style.css'}
+        if path in workbench:
+            file = WEB_ROOT / workbench[path]
+            return self.send_file(file, mimetypes.guess_type(file.name)[0] or 'application/octet-stream')
         static = {'/': 'index.html', '/index.html': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css',
                   '/vendor/hls.min.js': 'vendor/hls.min.js', '/vendor/hls.LICENSE': 'vendor/hls.LICENSE'}
         if path not in static:

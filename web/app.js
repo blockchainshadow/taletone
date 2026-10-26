@@ -26,6 +26,10 @@
   const nativeOrigin = 'http://127.0.0.1:8877';
   const pickerButtons = ['chooseVideo', 'chooseVideoSource', 'chooseAudio', 'chooseRemapAudio'].map($);
   let pickerPending = false;
+  const inWorkbench = location.origin === nativeOrigin;
+  if (!inWorkbench) {
+    for (const button of pickerButtons) button.textContent = '进入本机工作台选文件';
+  }
 
   function notice(message, kind = '') {
     ui.notice.textContent = message;
@@ -53,6 +57,10 @@
   }
 
   async function systemPicker(kind, consume) {
+    if (!inWorkbench) {
+      location.assign(`${nativeOrigin}/workbench/`);
+      return;
+    }
     if (pickerPending) return;
     pickerPending = true;
     for (const button of pickerButtons) {
@@ -68,8 +76,8 @@
         headers: { 'Content-Type': 'application/json' },
         credentials: 'omit',
         body: JSON.stringify({ kind }),
-      }).catch(() => {
-        throw new Error('无法连接本机文件选择服务（127.0.0.1:8877）。请启动 TaleTone 本机服务，并允许浏览器访问本地网络；如已运行，请检查浏览器的本地网络权限。未改动当前项目，不会自动改用内嵌浏览器的文件输入框。');
+      }).catch((error) => {
+        throw new Error(`连接本机服务失败（${error?.name || 'Error'}: ${error?.message || '未知网络错误'}）。`);
       });
       const result = await response.json().catch(() => {
         throw new Error(`本机服务 API 返回了非 JSON 响应（HTTP ${response.status}），请更新支持系统选择器的 TaleTone 本机服务。`);

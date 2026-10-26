@@ -30,10 +30,12 @@ def choose_files(kind):
 function run(argv) {
     var app = Application.currentApplication();
     app.includeStandardAdditions = true;
+    app.activate();
     try {
         var audio = argv[0] === 'audio';
         var selected = app.chooseFile({
             withPrompt: audio ? '声伴：选择本地音频或配音成片（可多选）' : '声伴：选择本地视频',
+            defaultLocation: app.pathTo('downloads folder'),
             ofType: audio ? ['public.audio', 'public.movie'] : ['public.movie'],
             multipleSelectionsAllowed: audio
         });
@@ -88,22 +90,33 @@ class NativePicker:
         host = handler.headers.get('Host')
         origins = handler.headers.get_all('Origin', [])
         origin = origins[0] if len(origins) == 1 else None
-        allowed_origins = {PUBLIC_ORIGIN, f'http://{host}'}
+        allowed_origins = {PUBLIC_ORIGIN, f'http://{host}', f'http://127.0.0.1:{handler.server.server_port}', f'http://localhost:{handler.server.server_port}'}
         trusted = len(origins) == 1 and origin in allowed_origins
         if len(handler.headers.get_all('Host', [])) != 1 or host not in hosts:
             self._json(handler, 403, {'error': 'Loopback Host is required.'})
             return True
-        # POST and preflight always require an explicit trusted browser origin.
-        if (origins and not trusted) or (not trusted and
-                (handler.command in ('POST', 'OPTIONS') or handler.headers.get('Sec-Fetch-Site') == 'cross-site')):
-            self._json(handler, 403, {'error': 'Origin is not allowed.'})
+        if origins:
+            if not trusted:
+                self._json(handler, 403, {'error': 'Origin is not allowed.'})
+                return True
+        elif handler.headers.get('Sec-Fetch-Site') == 'cross-site':
+            self._json(handler, 403, {'error': 'Cross-site request without Origin is not allowed.'})
             return True
         cors_origin = origin if trusted else None
         if target.query or target.fragment:
             self._json(handler, 400, {'error': 'Native picker routes do not accept query parameters.'}, cors_origin)
-        elif handler.command == 'OPTIONS':
-            self._options(handler, picker, cors_origin)
-        elif picker and handler.command == 'POST':
+            return True
+        if handler.command == 'OPTIONS':
+            if handler.headers.get('Access-Control-Request-Method'):
+                self._options(handler, picker, cors_origin)
+            else:
+                handler.send_response(204)
+                self._headers(handler, cors_origin)
+                handler.send_header('Allow', 'POST, OPTIONS' if picker else 'GET, HEAD, OPTIONS')
+                handler.send_header('Content-Length', '0')
+                handler.end_headers()
+            return True
+        if picker and handler.command == 'POST':
             self._pick(handler, cors_origin, host)
         elif media and handler.command in ('GET', 'HEAD'):
             self._media(handler, target.path[len(FILES_PATH):], cors_origin)
@@ -138,9 +151,9 @@ class NativePicker:
         allowed_headers = {'content-type'} if picker else {'range'}
         requested = {part.strip().lower() for part in handler.headers.get('Access-Control-Request-Headers', '').split(',') if part.strip()}
         private_network = handler.headers.get('Access-Control-Request-Private-Network')
-        if (handler.headers.get('Access-Control-Request-Method') not in methods or
-                not requested <= allowed_headers or private_network not in (None, 'true')):
-            self._json(handler, 403, {'error': 'Preflight method or headers are not allowed.'}, origin)
+        method = handler.headers.get('Access-Control-Request-Method', '').upper()
+        if (method not in methods or not requested <= allowed_headers or private_network not in (None, 'true')):
+            self._json(handler, 403, {'error': f'Preflight method {method} or headers {requested} are not allowed.'}, origin)
             return
         handler.send_response(204)
         self._headers(handler, origin)
